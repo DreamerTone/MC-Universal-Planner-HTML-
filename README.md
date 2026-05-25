@@ -30,6 +30,11 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
 - **Minecraft-style block materials**: cube blocks use model-resolved face
   textures such as top, bottom, side, front, and back instead of a single flat
   preview texture.
+- **Jar-driven block meshes**: block models now render from vanilla/mod jar
+  model elements where possible, including multipart models used by fences and
+  other connecting blocks.
+- **Vanilla-like placement states**: axis blocks such as logs orient from the
+  clicked face, while supported horizontal blocks use placement-facing state.
 - **Local-only**: the jar is parsed in your browser using JSZip and cached in
   IndexedDB. The file never leaves your machine.
 

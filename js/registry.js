@@ -70,6 +70,7 @@
             const textureSet = this._resolveTextureSet(ns, name, 'block');
             const category = this._classify(ns, name, 'block', data);
             const renderHint = this._renderHint(ns, name);
+            const behavior = this._behaviorFor(name, renderHint);
             this.blocks.set(id, {
               id, ns, name, kind: 'block',
               texture: tex,
@@ -78,6 +79,7 @@
               category,
               categoryLabel: CATEGORY_LABELS[category] || 'Misc',
               renderHint,
+              behavior,
               sourcePack: pack.sourceName,
               sourceType: pack.sourceType || 'unknown',
             });
@@ -95,6 +97,7 @@
               category,
               categoryLabel: CATEGORY_LABELS[category] || 'Misc',
               renderHint: { shape: 'item', source: 'item-model' },
+              behavior: {},
               sourcePack: pack.sourceName,
               sourceType: pack.sourceType || 'unknown',
             });
@@ -265,6 +268,15 @@
       };
     }
 
+    _behaviorFor(name, renderHint) {
+      const shape = renderHint && renderHint.shape;
+      return {
+        axisOnPlace: /(^|_)(log|stem|hyphae|pillar|basalt)$/.test(name),
+        horizontalFacingOnPlace: /(^|_)(stairs|sign|wall_sign|ladder|furnace|chest|barrel|observer|dispenser|dropper|button)$/.test(name),
+        connectsCardinal: shape === 'fence' || /(^|_)(fence|wall|pane|bars)$/.test(name),
+      };
+    }
+
     _firstBlockModelRef(ns, name) {
       const nsData = this._packFor(ns)?.namespaces[ns];
       if (!nsData) return null;
@@ -388,6 +400,122 @@
         depth++;
       }
       return out;
+    }
+
+    _collectModelElements(model, visited = new Set(), depth = 0) {
+      if (!model || depth > 10) return [];
+      if (Array.isArray(model.elements)) return model.elements;
+      if (!model.parent) return [];
+      const [pns, ppath] = this._splitRef(model.parent, 'minecraft');
+      const key = `${pns}:${ppath}`;
+      if (visited.has(key)) return [];
+      visited.add(key);
+      return this._collectModelElements(this._modelsFor(pns)?.get(ppath), visited, depth + 1);
+    }
+
+    _modelPartsForBlock(id, state = {}) {
+      const entry = this.blocks.get(id);
+      if (!entry) return [];
+      const pack = this._packFor(entry.ns);
+      const nsData = pack?.namespaces[entry.ns];
+      if (!nsData) return [];
+
+      const blockstate = nsData.blockstates.get(entry.name);
+      let refs = [];
+      if (blockstate) {
+        refs = refs.concat(this._variantModelRefs(blockstate, state, entry.ns));
+        refs = refs.concat(this._multipartModelRefs(blockstate, state, entry.ns));
+      }
+      if (!refs.length) {
+        const ref = this._firstBlockModelRef(entry.ns, entry.name) || `${entry.ns}:block/${entry.name}`;
+        refs.push({ model: ref, x: 0, y: 0, uvlock: false });
+      }
+
+      const parts = [];
+      for (const ref of refs) {
+        const model = this._modelForRef(ref.model, entry.ns);
+        if (!model) continue;
+        const textures = this._collectTextures(model, new Set());
+        const elements = this._collectModelElements(model, new Set());
+        if (!elements.length) continue;
+        parts.push({
+          elements,
+          textures,
+          ns: entry.ns,
+          x: ref.x || 0,
+          y: ref.y || 0,
+          uvlock: !!ref.uvlock,
+        });
+      }
+      return parts;
+    }
+
+    _variantModelRefs(blockstate, state, defaultNs) {
+      if (!blockstate.variants) return [];
+      let best = null;
+      let bestScore = -1;
+      for (const [key, value] of Object.entries(blockstate.variants)) {
+        const score = this._stateKeyScore(key, state);
+        if (score < 0 || score < bestScore) continue;
+        best = value;
+        bestScore = score;
+      }
+      if (!best) return [];
+      const picked = Array.isArray(best) ? best[0] : best;
+      return picked && picked.model ? [{
+        model: this._fullModelRef(picked.model, defaultNs),
+        x: picked.x || 0,
+        y: picked.y || 0,
+        uvlock: !!picked.uvlock,
+      }] : [];
+    }
+
+    _multipartModelRefs(blockstate, state, defaultNs) {
+      if (!Array.isArray(blockstate.multipart)) return [];
+      const out = [];
+      for (const part of blockstate.multipart) {
+        if (part.when && !this._whenMatches(part.when, state)) continue;
+        const applies = Array.isArray(part.apply) ? part.apply : [part.apply];
+        for (const apply of applies) {
+          if (!apply || !apply.model) continue;
+          out.push({
+            model: this._fullModelRef(apply.model, defaultNs),
+            x: apply.x || 0,
+            y: apply.y || 0,
+            uvlock: !!apply.uvlock,
+          });
+        }
+      }
+      return out;
+    }
+
+    _stateKeyScore(key, state) {
+      if (!key) return 0;
+      let score = 0;
+      for (const piece of key.split(',')) {
+        const [k, v] = piece.split('=');
+        if (!k || !(k in state)) return -1;
+        if (String(state[k]) !== v) return -1;
+        score++;
+      }
+      return score;
+    }
+
+    _whenMatches(when, state) {
+      if (!when) return true;
+      if (Array.isArray(when.OR)) return when.OR.some(w => this._whenMatches(w, state));
+      if (Array.isArray(when.AND)) return when.AND.every(w => this._whenMatches(w, state));
+      for (const [k, v] of Object.entries(when)) {
+        if (k === 'OR' || k === 'AND') continue;
+        const allowed = String(v).split('|');
+        if (!allowed.includes(String(state[k]))) return false;
+      }
+      return true;
+    }
+
+    _fullModelRef(ref, defaultNs) {
+      const [ns, path] = this._splitRef(ref, defaultNs);
+      return `${ns}:${path}`;
     }
 
     _lookupTextureRef(ref) {
@@ -606,6 +734,21 @@
 
     categoryDefs() {
       return CATEGORY_DEFS.slice();
+    }
+
+    modelPartsForBlock(id, state = {}) {
+      return this._modelPartsForBlock(id, state);
+    }
+
+    textureUrlForModelRef(ref, textures = {}, defaultNs = 'minecraft') {
+      let val = ref;
+      let safety = 8;
+      while (typeof val === 'string' && val.startsWith('#') && safety-- > 0) {
+        val = textures[val.slice(1)];
+      }
+      if (!val || typeof val !== 'string' || val.startsWith('#')) return null;
+      const [ns, path] = this._splitRef(val, defaultNs);
+      return this._packFor(ns)?.namespaces[ns]?.textures.get(path) || null;
     }
 
     firstItemInTag(tagId) {
