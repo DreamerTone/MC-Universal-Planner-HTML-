@@ -73,26 +73,19 @@
 
     <!-- BUILDER VIEW -->
     <section class="view active" data-view="builder">
-      <aside class="palette">
-        <div class="palette-head">
-          <input id="palette-search" type="search" placeholder="Search blocks...">
-          <select id="palette-category" title="Filter by category"></select>
-          <div class="palette-tools">
-            <button id="tool-place" class="tool active" data-tool="place" title="Place block">Place</button>
-            <button id="tool-erase" class="tool" data-tool="erase" title="Erase block">Erase</button>
-            <button id="tool-pick" class="tool" data-tool="pick" title="Pick block from build">Pick</button>
-            <button id="tool-fill" class="tool" data-tool="fill" title="Fill ground layer">Fill</button>
-          </div>
-        </div>
-        <div id="selected-block" class="selected-block">
-          <span>No block selected</span>
-        </div>
-        <div id="palette-grid" class="palette-grid"></div>
-      </aside>
-
       <div class="builder-main">
         <div class="builder-toolbar">
           <div class="row">
+            <button id="open-inventory" class="btn primary small">Inventory</button>
+            <div id="selected-block" class="selected-block compact">
+              <span>No block selected</span>
+            </div>
+            <div class="palette-tools">
+              <button id="tool-place" class="tool active" data-tool="place" title="Place block">Place</button>
+              <button id="tool-erase" class="tool" data-tool="erase" title="Erase block">Erase</button>
+              <button id="tool-pick" class="tool" data-tool="pick" title="Pick block from build">Pick</button>
+              <button id="tool-fill" class="tool" data-tool="fill" title="Fill ground layer">Fill</button>
+            </div>
             <label>Size</label>
             <input id="grid-w" type="number" min="1" max="64" value="16" title="X">
             <span>&times;</span>
@@ -114,7 +107,7 @@
           </div>
         </div>
         <div class="viewport-wrap">
-          <canvas id="builder-canvas"></canvas>
+          <canvas id="builder-canvas" tabindex="0"></canvas>
         </div>
         <div class="grid-status">
           <span id="cursor-coords">-</span>
@@ -200,6 +193,24 @@
     </section>
 
   </main>
+
+  <div id="creative-overlay" class="creative-overlay hidden" aria-hidden="true">
+    <section class="creative-inventory" role="dialog" aria-modal="true" aria-labelledby="creative-title">
+      <header class="creative-head">
+        <div>
+          <h2 id="creative-title">Creative Inventory</h2>
+          <div id="creative-selected" class="creative-selected">No block selected</div>
+        </div>
+        <button id="close-inventory" class="btn ghost small" title="Close inventory">Close</button>
+      </header>
+      <div id="creative-categories" class="creative-categories"></div>
+      <div class="creative-search">
+        <input id="creative-search" type="search" placeholder="Search blocks">
+        <span id="creative-count" class="muted"></span>
+      </div>
+      <div id="creative-grid" class="creative-grid"></div>
+    </section>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
 </section>

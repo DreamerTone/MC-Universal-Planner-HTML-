@@ -9,8 +9,10 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
 - **Jar gate**: nothing in the app is reachable until you load a `.jar`. The
   detected Minecraft version is shown in the header so any future mods can be
   matched to the correct game version.
-- **Builder**: 2D top-down grid with a Y-layer slider. Place / erase / pick /
+- **Builder**: 3D voxel planner with orbit / pan / zoom, place / erase / pick /
   fill, save & load builds, export to JSON.
+- **Creative inventory**: press `E` in the Builder to open a polished
+  Minecraft-inspired inventory with categories, search, and block previews.
 - **Blocks browser**: searchable list of every block and item in the loaded
   pack, with textures resolved from each block's model chain.
 - **Recipe view**: pick any item and see all its crafting / smelting /
@@ -25,6 +27,9 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
 - **Model hints**: the registry records basic shape hints such as cube, slab,
   stairs, pane, fence, door, trapdoor, crop/cross, and custom for future mesh
   upgrades.
+- **Minecraft-style block materials**: cube blocks use model-resolved face
+  textures such as top, bottom, side, front, and back instead of a single flat
+  preview texture.
 - **Local-only**: the jar is parsed in your browser using JSZip and cached in
   IndexedDB. The file never leaves your machine.
 

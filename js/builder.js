@@ -387,12 +387,34 @@
     _materialFor(id) {
       if (this._materials.has(id)) return this._materials.get(id);
       const entry = this.registry.get(id);
-      const tex = this._textureFor(entry);
-      const mat = tex
-        ? new THREE.MeshLambertMaterial({ map: tex })
-        : new THREE.MeshLambertMaterial({ color: 0x55606f });
+      const mat = this._faceMaterialsFor(entry);
       this._materials.set(id, mat);
       return mat;
+    }
+
+    _faceMaterialsFor(entry) {
+      if (!entry) return new THREE.MeshLambertMaterial({ color: 0x55606f });
+      const set = entry.textureSet;
+      if (set && (entry.renderHint?.shape || 'cube') === 'cube') {
+        return [
+          this._materialFromUrl(set.right || set.side || set.all),
+          this._materialFromUrl(set.left || set.side || set.all),
+          this._materialFromUrl(set.top || set.all),
+          this._materialFromUrl(set.bottom || set.all),
+          this._materialFromUrl(set.front || set.side || set.all),
+          this._materialFromUrl(set.back || set.side || set.all),
+        ];
+      }
+      return entry.texture
+        ? this._materialFromUrl(entry.texture)
+        : new THREE.MeshLambertMaterial({ color: 0x55606f });
+    }
+
+    _materialFromUrl(url) {
+      const tex = this._textureForUrl(url);
+      return tex
+        ? new THREE.MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide })
+        : new THREE.MeshLambertMaterial({ color: 0x55606f });
     }
 
     _geometryFor(entry) {
@@ -425,7 +447,7 @@
           geom = new THREE.BoxGeometry(1, 0.0625, 1);
           break;
         case 'cross':
-          geom = new THREE.BoxGeometry(0.82, 0.82, 0.82);
+          geom = this._createCrossGeometry();
           break;
         case 'custom':
           geom = new THREE.BoxGeometry(0.9, 0.9, 0.9);
@@ -434,6 +456,26 @@
           geom = this._sharedGeom;
       }
       this._geometries.set(shape, geom);
+      return geom;
+    }
+
+    _createCrossGeometry() {
+      const positions = new Float32Array([
+        -0.5, -0.5, -0.5,   0.5, -0.5,  0.5,   0.5,  0.5,  0.5,
+        -0.5, -0.5, -0.5,   0.5,  0.5,  0.5,  -0.5,  0.5, -0.5,
+         0.5, -0.5, -0.5,  -0.5, -0.5,  0.5,  -0.5,  0.5,  0.5,
+         0.5, -0.5, -0.5,  -0.5,  0.5,  0.5,   0.5,  0.5, -0.5,
+      ]);
+      const uvs = new Float32Array([
+        0, 1, 1, 1, 1, 0,
+        0, 1, 1, 0, 0, 0,
+        0, 1, 1, 1, 1, 0,
+        0, 1, 1, 0, 0, 0,
+      ]);
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geom.computeVertexNormals();
       return geom;
     }
 
@@ -453,11 +495,19 @@
     _textureFor(entry) {
       if (!entry || !entry.texture) return null;
       if (this._textures.has(entry.id)) return this._textures.get(entry.id);
-      const t = new THREE.TextureLoader().load(entry.texture, () => { this._needsRender = true; });
+      const t = this._textureForUrl(entry.texture);
+      this._textures.set(entry.id, t);
+      return t;
+    }
+
+    _textureForUrl(url) {
+      if (!url) return null;
+      if (this._textures.has(url)) return this._textures.get(url);
+      const t = new THREE.TextureLoader().load(url, () => { this._needsRender = true; });
       t.magFilter = THREE.NearestFilter;
       t.minFilter = THREE.NearestFilter;
       t.colorSpace = THREE.SRGBColorSpace;
-      this._textures.set(entry.id, t);
+      this._textures.set(url, t);
       return t;
     }
 

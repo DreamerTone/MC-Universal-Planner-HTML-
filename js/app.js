@@ -10,6 +10,7 @@
     builder: null,
     browserView: null,
     currentRecipeId: null,
+    creativeCategory: '',
     appReady: false,
   };
 
@@ -171,10 +172,14 @@
   function initBuilderView() {
     state.builder = new MCBuilder(el('#builder-canvas'), state.registry);
 
-    renderCategorySelect('#palette-category', 'block');
-    renderPalette('');
-    el('#palette-search').addEventListener('input', (e) => renderPalette(e.target.value));
-    el('#palette-category').addEventListener('change', () => renderPalette(el('#palette-search').value));
+    el('#open-inventory').addEventListener('click', openCreativeInventory);
+    el('#close-inventory').addEventListener('click', closeCreativeInventory);
+    el('#creative-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'creative-overlay') closeCreativeInventory();
+    });
+    el('#creative-search').addEventListener('input', renderCreativeInventory);
+    document.addEventListener('keydown', handleBuilderKeys);
+    renderCreativeInventory();
 
     els('.tool').forEach(b => b.addEventListener('click', () => {
       els('.tool').forEach(x => x.classList.toggle('active', x === b));
@@ -207,51 +212,117 @@
       } else el('#cell-info').textContent = '';
     });
     state.builder.on('picked', (entry) => {
-      state.builder.setSelected(entry);
-      renderSelected(entry);
-      const cell = el(`.palette-cell[data-id="${cssEscape(entry.id)}"]`);
-      els('.palette-cell.selected').forEach(c => c.classList.remove('selected'));
-      if (cell) cell.classList.add('selected');
+      setSelectedBlock(entry);
     });
   }
 
-  function cssEscape(s) {
-    if (window.CSS && CSS.escape) return CSS.escape(s);
-    return s.replace(/([!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+  function handleBuilderKeys(e) {
+    const overlayOpen = !el('#creative-overlay').classList.contains('hidden');
+    const builderActive = el('[data-view="builder"]')?.classList.contains('active');
+    if (!builderActive && !overlayOpen) return;
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable;
+    if (typing && e.key !== 'Escape') return;
+    if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault();
+      toggleCreativeInventory();
+    } else if (e.key === 'Escape' && overlayOpen) {
+      e.preventDefault();
+      closeCreativeInventory();
+    }
   }
 
-  function renderPalette(query) {
-    const grid = el('#palette-grid');
+  function openCreativeInventory() {
+    el('#creative-overlay').classList.remove('hidden');
+    el('#creative-overlay').setAttribute('aria-hidden', 'false');
+    renderCreativeInventory();
+    el('#creative-search').focus();
+  }
+
+  function closeCreativeInventory() {
+    el('#creative-overlay').classList.add('hidden');
+    el('#creative-overlay').setAttribute('aria-hidden', 'true');
+    el('#builder-canvas').focus();
+  }
+
+  function toggleCreativeInventory() {
+    if (el('#creative-overlay').classList.contains('hidden')) openCreativeInventory();
+    else closeCreativeInventory();
+  }
+
+  function renderCreativeInventory() {
+    renderCreativeCategories();
+    const grid = el('#creative-grid');
+    const query = el('#creative-search').value || '';
     const entries = state.registry.allEntries({
       kind: 'block',
-      category: el('#palette-category').value || null,
+      category: state.creativeCategory || null,
       query,
     });
-    const cap = 500;
+    const cap = 720;
     const shown = entries.slice(0, cap);
+    el('#creative-count').textContent = `${entries.length.toLocaleString()} blocks`;
     grid.innerHTML = shown.map(e => `
-      <div class="palette-cell ${e.texture ? '' : 'no-tex'}" data-id="${e.id}" title="${e.displayName} (${e.id}) - ${e.categoryLabel}">
-        ${e.texture ? `<img src="${e.texture}" alt="">` : `${e.name}`}
+      <div class="creative-slot ${state.builder && state.builder.selected && state.builder.selected.id === e.id ? 'selected' : ''} ${e.texture ? '' : 'no-tex'}" data-id="${e.id}" title="${e.displayName} (${e.id}) - ${e.categoryLabel}">
+        <div class="slot-bg">
+          ${e.texture ? `<img src="${e.texture}" alt="">` : `<span>${escapeHtml(e.name)}</span>`}
+        </div>
       </div>
     `).join('') + (entries.length > cap
-      ? `<div class="muted" style="grid-column:1/-1;padding:8px;text-align:center;font-size:11px">${entries.length - cap} more &mdash; refine search</div>`
+      ? `<div class="creative-more">${(entries.length - cap).toLocaleString()} more - refine search</div>`
       : '');
-    els('.palette-cell').forEach(cell => {
+    els('.creative-slot').forEach(cell => {
       cell.addEventListener('click', () => {
         const id = cell.dataset.id;
         const entry = state.registry.get(id);
         if (!entry) return;
-        state.builder.setSelected(entry);
-        renderSelected(entry);
-        els('.palette-cell.selected').forEach(c => c.classList.remove('selected'));
-        cell.classList.add('selected');
+        setSelectedBlock(entry);
+        closeCreativeInventory();
       });
     });
   }
 
+  function renderCreativeCategories() {
+    const root = el('#creative-categories');
+    const cats = state.registry.categoriesFor('block');
+    const allCount = state.registry.allEntries({ kind: 'block' }).length;
+    const buttons = [{
+      id: '',
+      label: 'All',
+      count: allCount,
+    }].concat(cats.map(cat => ({
+      id: cat.id,
+      label: cat.label,
+      count: state.registry.allEntries({ kind: 'block', category: cat.id }).length,
+    })));
+    root.innerHTML = buttons.map(cat => `
+      <button class="creative-tab ${state.creativeCategory === cat.id ? 'active' : ''}" data-category="${cat.id}">
+        <span>${escapeHtml(cat.label)}</span>
+        <b>${cat.count.toLocaleString()}</b>
+      </button>
+    `).join('');
+    els('.creative-tab', root).forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.creativeCategory = btn.dataset.category || '';
+        renderCreativeInventory();
+      });
+    });
+  }
+
+  function setSelectedBlock(entry) {
+    state.builder.setSelected(entry);
+    renderSelected(entry);
+    renderCreativeInventory();
+  }
+
   function renderSelected(entry) {
     const sel = el('#selected-block');
-    if (!entry) { sel.innerHTML = '<span>No block selected</span>'; return; }
+    const overlaySel = el('#creative-selected');
+    if (!entry) {
+      sel.innerHTML = '<span>No block selected</span>';
+      if (overlaySel) overlaySel.textContent = 'No block selected';
+      return;
+    }
     sel.innerHTML = `
       ${entry.texture ? `<img src="${entry.texture}" alt="">` : ''}
       <div class="info">
@@ -259,6 +330,7 @@
         <span class="id">${entry.id}</span>
         <span class="id">${entry.categoryLabel || 'Misc'}${entry.renderHint ? ` - ${entry.renderHint.shape}` : ''}</span>
       </div>`;
+    if (overlaySel) overlaySel.textContent = `${entry.displayName} - ${entry.id}`;
   }
 
   async function saveBuild() {
@@ -572,18 +644,6 @@
     `).join('');
   }
 
-  function renderCategorySelect(sel, kind) {
-    const node = el(sel);
-    if (!node) return;
-    const prev = node.value;
-    const opts = ['<option value="">All categories</option>'];
-    for (const cat of state.registry.categoriesFor(kind)) {
-      opts.push(`<option value="${cat.id}">${cat.label}</option>`);
-    }
-    node.innerHTML = opts.join('');
-    if (prev && Array.from(node.options).some(o => o.value === prev)) node.value = prev;
-  }
-
   function updatePackMeta() {
     const base = state.pack;
     const count = state.registry.packSummaries.length;
@@ -594,8 +654,7 @@
 
   function refreshRegistryViews() {
     updatePackMeta();
-    renderCategorySelect('#palette-category', 'block');
-    if (state.builder) renderPalette(el('#palette-search').value || '');
+    if (state.builder) renderCreativeInventory();
     if (state.browserView) {
       state.browserView.refreshNamespaces();
       state.browserView.render();

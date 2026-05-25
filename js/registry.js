@@ -67,11 +67,13 @@
           for (const [name, _b] of data.blocks) {
             const id = `${ns}:${name}`;
             const tex = this._resolveTexture(ns, name, 'block');
+            const textureSet = this._resolveTextureSet(ns, name, 'block');
             const category = this._classify(ns, name, 'block', data);
             const renderHint = this._renderHint(ns, name);
             this.blocks.set(id, {
               id, ns, name, kind: 'block',
               texture: tex,
+              textureSet,
               displayName: this._displayName(ns, name, 'block'),
               category,
               categoryLabel: CATEGORY_LABELS[category] || 'Misc',
@@ -88,6 +90,7 @@
             this.items.set(id, {
               id, ns, name, kind: 'item',
               texture: tex,
+              textureSet: tex ? { all: tex } : null,
               displayName: this._displayName(ns, name, 'item'),
               category,
               categoryLabel: CATEGORY_LABELS[category] || 'Misc',
@@ -175,6 +178,63 @@
       return nsData.textures.get(`block/${name}`)
           || nsData.textures.get(`item/${name}`)
           || null;
+    }
+
+    _resolveTextureSet(ns, name, kind) {
+      const pack = this._packFor(ns);
+      if (!pack) return null;
+      const nsData = pack.namespaces[ns];
+      const model = this._bestModelFor(ns, name, kind);
+      const merged = model ? this._collectTextures(model, new Set()) : {};
+      const resolveVar = (val) => {
+        let safety = 8;
+        while (typeof val === 'string' && val.startsWith('#') && safety-- > 0) {
+          val = merged[val.slice(1)];
+        }
+        return val;
+      };
+      const pick = (...keys) => {
+        for (const key of keys) {
+          if (!(key in merged)) continue;
+          const tex = this._lookupTextureRef(resolveVar(merged[key]));
+          if (tex) return tex;
+        }
+        return null;
+      };
+      const directBlock = nsData.textures.get(`block/${name}`);
+      const directItem = nsData.textures.get(`item/${name}`);
+      const all = pick('all', 'texture', 'particle', 'side', 'front', 'layer0')
+        || directBlock
+        || directItem
+        || null;
+      if (!all) return null;
+      return {
+        all,
+        top: pick('up', 'top', 'end', 'all', 'side', 'texture', 'particle') || all,
+        bottom: pick('down', 'bottom', 'end', 'all', 'side', 'texture', 'particle') || all,
+        side: pick('side', 'all', 'texture', 'particle') || all,
+        front: pick('front', 'side', 'all', 'texture', 'particle') || all,
+        back: pick('back', 'side', 'all', 'texture', 'particle') || all,
+        left: pick('left', 'side', 'all', 'texture', 'particle') || all,
+        right: pick('right', 'side', 'all', 'texture', 'particle') || all,
+      };
+    }
+
+    _bestModelFor(ns, name, kind) {
+      const nsData = this._packFor(ns)?.namespaces[ns];
+      if (!nsData) return null;
+      const tryModels = kind === 'block'
+        ? [`block/${name}`, `item/${name}`]
+        : [`item/${name}`, `block/${name}`];
+      for (const key of tryModels) {
+        const model = nsData.models.get(key);
+        if (model) return model;
+      }
+      if (kind === 'block') {
+        const modelRef = this._firstBlockModelRef(ns, name);
+        if (modelRef) return this._modelForRef(modelRef, ns);
+      }
+      return null;
     }
 
     _renderHint(ns, name) {
