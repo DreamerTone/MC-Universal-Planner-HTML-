@@ -218,18 +218,19 @@ code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size:
   border-bottom: 1px solid var(--border-soft);
   display: flex; flex-direction: column; gap: 8px;
 }
-#layer-slider { flex: 1; max-width: 400px; }
-.grid-wrap {
-  flex: 1; overflow: auto;
-  background:
-    repeating-conic-gradient(#1a1d22 0% 25%, #1d2128 0% 50%) 50% / 16px 16px;
-  display: flex; align-items: center; justify-content: center;
-  padding: 20px;
+.viewport-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #1a1d22;
 }
-#grid-canvas {
-  background: var(--grid-bg);
-  border: 1px solid var(--border);
+#builder-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  display: block;
   cursor: crosshair;
+  outline: none;
 }
 .grid-status {
   padding: 6px 16px;
@@ -316,6 +317,44 @@ code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size:
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+/* ============ RECIPE TREE ============ */
+.tree {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 13px;
+  margin: 10px 0 18px;
+}
+.tree-node {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 0;
+  position: relative;
+}
+.tree-node .tree-rail {
+  flex-shrink: 0;
+  color: #4a5160;
+  white-space: pre;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.tree-node img {
+  width: 22px; height: 22px; flex-shrink: 0;
+}
+.tree-node .tree-name { color: var(--text); }
+.tree-node .tree-qty {
+  background: var(--bg-3);
+  color: var(--text);
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+.tree-node .tree-craft {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: 6px;
+}
+.tree-node.is-raw .tree-qty { background: var(--accent); color: #1a1d22; }
+.tree-node.is-tag .tree-name { color: var(--warn); }
 
 .materials-list {
   margin-top: 16px;

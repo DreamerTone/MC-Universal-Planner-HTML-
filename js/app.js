@@ -130,7 +130,7 @@
 
   /* ---------- BUILDER ---------- */
   function initBuilderView() {
-    state.builder = new MCBuilder(el('#grid-canvas'), state.registry);
+    state.builder = new MCBuilder(el('#builder-canvas'), state.registry);
 
     renderPalette('');
     el('#palette-search').addEventListener('input', (e) => renderPalette(e.target.value));
@@ -145,20 +145,8 @@
       const d = +el('#grid-d').value;
       const h = +el('#grid-h').value;
       state.builder.setSize(w, d, h);
-      el('#layer-slider').max = String(h - 1);
-      if (+el('#layer-slider').value > h - 1) {
-        el('#layer-slider').value = String(h - 1);
-        el('#layer-num').textContent = String(h - 1);
-      }
     });
-    el('#layer-slider').addEventListener('input', (e) => {
-      const v = +e.target.value;
-      el('#layer-num').textContent = String(v);
-      state.builder.setLayer(v);
-    });
-    el('#show-below').addEventListener('change', (e) => state.builder.setShowBelow(e.target.checked));
 
-    el('#clear-layer').addEventListener('click', () => state.builder.clearLayer());
     el('#clear-build').addEventListener('click', () => {
       if (confirm('Clear the whole build?')) state.builder.clear();
     });
@@ -170,10 +158,10 @@
 
     state.builder.on('hover', (pos) => {
       el('#cursor-coords').textContent = pos
-        ? `x=${pos.x}  y=${state.builder.layer}  z=${pos.z}`
+        ? `x=${pos.x}  y=${pos.y}  z=${pos.z}`
         : '-';
       if (pos) {
-        const c = state.builder.cells.get(`${pos.x},${state.builder.layer},${pos.z}`);
+        const c = state.builder.cells.get(`${pos.x},${pos.y},${pos.z}`);
         el('#cell-info').textContent = c ? c.id : '';
       } else el('#cell-info').textContent = '';
     });
@@ -243,9 +231,6 @@
     el('#grid-w').value = state.builder.W;
     el('#grid-d').value = state.builder.D;
     el('#grid-h').value = state.builder.H;
-    el('#layer-slider').max = String(state.builder.H - 1);
-    el('#layer-slider').value = '0';
-    el('#layer-num').textContent = '0';
     toast('Build loaded.', 'ok');
   }
   function exportBuild() {
@@ -267,7 +252,6 @@
         el('#grid-w').value = state.builder.W;
         el('#grid-d').value = state.builder.D;
         el('#grid-h').value = state.builder.H;
-        el('#layer-slider').max = String(state.builder.H - 1);
         toast('Build imported.', 'ok');
       } catch (e) {
         toast('Failed to import: ' + e.message, 'error');
@@ -339,11 +323,49 @@
       for (const rec of recipes) html += renderRecipeBlock(rec);
     }
 
-    // Total materials for N
-    const { totals } = state.calc.materialsFor(id, count, { breakRaw });
-    html += `<h3 style="margin-top:20px">Materials needed for ${count} &times; ${escapeHtml(entry.displayName)}</h3>`;
+    // Full breakdown tree + raw totals
+    const { totals, tree } = state.calc.materialsFor(id, count, { breakRaw });
+    html += `<h3 style="margin-top:24px">Full breakdown for ${count} &times; ${escapeHtml(entry.displayName)}</h3>`;
+    html += `<div class="tree">${renderTree(tree, [], true)}</div>`;
+    html += `<h3 style="margin-top:18px">${breakRaw ? 'Total raw materials' : 'Total direct ingredients'}</h3>`;
     html += renderMaterialsList(totals);
     root.innerHTML = html;
+  }
+
+  /* Render the breakdown tree. `prefix` is an array of booleans where each
+   * entry says "is the ancestor at this depth the last sibling?" — used to
+   * draw the ASCII rail (├─ vs └─ vs │ ) cleanly. */
+  function renderTree(node, prefix, isLast) {
+    const entry = state.registry.get(node.id)
+      || { displayName: node.id.replace(/^#?minecraft:/, ''), texture: null };
+
+    const rail = prefix.map(last => last ? '   ' : '│  ').join('')
+      + (prefix.length ? (isLast ? '└─ ' : '├─ ') : '');
+
+    const isRaw = node.leaf;
+    const isTag = node.isTag;
+    let craftNote = '';
+    if (!node.leaf && node.batches && (node.batches > 1 || node.outCount > 1)) {
+      craftNote = `<span class="tree-craft">${node.batches} craft${node.batches === 1 ? '' : 's'} of ${node.outCount}</span>`;
+    }
+
+    let html = `<div class="tree-node${isRaw ? ' is-raw' : ''}${isTag ? ' is-tag' : ''}">`
+      + `<span class="tree-rail">${rail}</span>`
+      + (entry.texture
+          ? `<img src="${entry.texture}" alt="">`
+          : `<span style="display:inline-block;width:22px;height:22px;background:#3a4150;border-radius:2px"></span>`)
+      + `<span class="tree-name">${escapeHtml(entry.displayName)}${isTag ? ' <span class="muted">(tag)</span>' : ''}</span>`
+      + `<span class="tree-qty">×${node.qty}</span>`
+      + craftNote
+      + `</div>`;
+
+    if (node.children && node.children.length) {
+      const childPrefix = prefix.concat([isLast]);
+      node.children.forEach((c, i) => {
+        html += renderTree(c, childPrefix, i === node.children.length - 1);
+      });
+    }
+    return html;
   }
 
   function renderRecipeBlock(rec) {

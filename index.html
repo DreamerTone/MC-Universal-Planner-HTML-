@@ -12,7 +12,7 @@
 <section id="gate" class="gate">
   <div class="gate-card">
     <h1>MC Universal Planner</h1>
-    <p class="tagline">Vanilla blocks, recipes, and a build grid &mdash; powered by your game's own <code>.jar</code>.</p>
+    <p class="tagline">Vanilla blocks, recipes, and a 3D build view &mdash; powered by your game's own <code>.jar</code>.</p>
 
     <div id="gate-drop" class="drop-zone" tabindex="0">
       <div class="drop-inner">
@@ -78,8 +78,8 @@
           <div class="palette-tools">
             <button id="tool-place" class="tool active" data-tool="place" title="Place block">Place</button>
             <button id="tool-erase" class="tool" data-tool="erase" title="Erase block">Erase</button>
-            <button id="tool-pick" class="tool" data-tool="pick" title="Pick block from grid">Pick</button>
-            <button id="tool-fill" class="tool" data-tool="fill" title="Fill layer">Fill</button>
+            <button id="tool-pick" class="tool" data-tool="pick" title="Pick block from build">Pick</button>
+            <button id="tool-fill" class="tool" data-tool="fill" title="Fill ground layer">Fill</button>
           </div>
         </div>
         <div id="selected-block" class="selected-block">
@@ -92,21 +92,17 @@
         <div class="builder-toolbar">
           <div class="row">
             <label>Size</label>
-            <input id="grid-w" type="number" min="1" max="64" value="16" title="Width (X)">
+            <input id="grid-w" type="number" min="1" max="64" value="16" title="X">
             <span>&times;</span>
-            <input id="grid-d" type="number" min="1" max="64" value="16" title="Depth (Z)">
+            <input id="grid-h" type="number" min="1" max="64" value="16" title="Y (height)">
             <span>&times;</span>
-            <input id="grid-h" type="number" min="1" max="64" value="8" title="Height (Y layers)">
+            <input id="grid-d" type="number" min="1" max="64" value="16" title="Z">
             <button id="apply-size" class="btn small">Apply</button>
+            <span class="muted" style="margin-left:12px;font-size:11px">
+              Left-drag: orbit &middot; right/shift-drag: pan &middot; wheel: zoom
+            </span>
           </div>
           <div class="row">
-            <label>Layer (Y)</label>
-            <input id="layer-slider" type="range" min="0" max="7" value="0">
-            <span id="layer-num">0</span>
-            <label class="check"><input id="show-below" type="checkbox" checked> show layer below</label>
-          </div>
-          <div class="row">
-            <button id="clear-layer" class="btn ghost small">Clear layer</button>
             <button id="clear-build" class="btn danger small">Clear all</button>
             <button id="save-build" class="btn small">Save</button>
             <button id="load-build" class="btn small">Load</button>
@@ -115,8 +111,8 @@
             <button id="import-build-btn" class="btn small">Import JSON</button>
           </div>
         </div>
-        <div class="grid-wrap">
-          <canvas id="grid-canvas"></canvas>
+        <div class="viewport-wrap">
+          <canvas id="builder-canvas"></canvas>
         </div>
         <div class="grid-status">
           <span id="cursor-coords">-</span>
@@ -129,14 +125,14 @@
     <section class="view" data-view="recipes">
       <div class="panel">
         <div class="row gap">
-          <input id="recipe-search" type="search" placeholder="Search items / blocks (e.g. piston, oak_planks)">
+          <input id="recipe-search" type="search" placeholder="Search items / blocks (e.g. anvil, oak_planks)">
           <label>Count <input id="recipe-count" type="number" min="1" value="1"></label>
           <label class="check"><input id="recipe-break-raw" type="checkbox" checked> Break down to raw materials</label>
         </div>
         <div class="recipe-layout">
           <div id="recipe-results" class="recipe-results"></div>
           <div id="recipe-detail" class="recipe-detail">
-            <p class="muted">Select an item to see its recipe and total materials.</p>
+            <p class="muted">Select an item to see its full crafting breakdown.</p>
           </div>
         </div>
       </div>
@@ -183,6 +179,7 @@
 
 <!-- libs -->
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
 <!-- app -->
 <script src="js/storage.js"></script>
