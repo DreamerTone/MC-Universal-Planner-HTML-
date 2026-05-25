@@ -67,6 +67,7 @@
           for (const [name, _b] of data.blocks) {
             const id = `${ns}:${name}`;
             const tex = this._resolveTexture(ns, name, 'block');
+            const iconTexture = this._resolveIconTexture(ns, name, 'block', tex);
             const textureSet = this._resolveTextureSet(ns, name, 'block');
             const category = this._classify(ns, name, 'block', data);
             const renderHint = this._renderHint(ns, name);
@@ -74,6 +75,7 @@
             this.blocks.set(id, {
               id, ns, name, kind: 'block',
               texture: tex,
+              iconTexture,
               textureSet,
               displayName: this._displayName(ns, name, 'block'),
               category,
@@ -92,6 +94,7 @@
             this.items.set(id, {
               id, ns, name, kind: 'item',
               texture: tex,
+              iconTexture: tex,
               textureSet: tex ? { all: tex } : null,
               displayName: this._displayName(ns, name, 'item'),
               category,
@@ -181,6 +184,18 @@
       return nsData.textures.get(`block/${name}`)
           || nsData.textures.get(`item/${name}`)
           || null;
+    }
+
+    _resolveIconTexture(ns, name, kind, fallback) {
+      const pack = this._packFor(ns);
+      if (!pack) return fallback || null;
+      const nsData = pack.namespaces[ns];
+      const itemModel = nsData.models.get(`item/${name}`);
+      if (itemModel) {
+        const icon = this._pickTextureFromModel(itemModel);
+        if (icon) return icon;
+      }
+      return nsData.textures.get(`item/${name}`) || fallback || null;
     }
 
     _resolveTextureSet(ns, name, kind) {
@@ -748,6 +763,10 @@
       }
       if (!val || typeof val !== 'string' || val.startsWith('#')) return null;
       const [ns, path] = this._splitRef(val, defaultNs);
+      return this._packFor(ns)?.namespaces[ns]?.textures.get(path) || null;
+    }
+
+    textureUrl(ns, path) {
       return this._packFor(ns)?.namespaces[ns]?.textures.get(path) || null;
     }
 

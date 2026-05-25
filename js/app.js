@@ -265,7 +265,7 @@
     grid.innerHTML = shown.map(e => `
       <div class="creative-slot ${state.builder && state.builder.selected && state.builder.selected.id === e.id ? 'selected' : ''} ${e.texture ? '' : 'no-tex'}" data-id="${e.id}" title="${e.displayName} (${e.id}) - ${e.categoryLabel}">
         <div class="slot-bg">
-          ${e.texture ? `<img src="${e.texture}" alt="">` : `<span>${escapeHtml(e.name)}</span>`}
+          ${e.iconTexture || e.texture ? `<img src="${e.iconTexture || e.texture}" alt="">` : `<span>${escapeHtml(e.name)}</span>`}
         </div>
       </div>
     `).join('') + (entries.length > cap
@@ -324,7 +324,7 @@
       return;
     }
     sel.innerHTML = `
-      ${entry.texture ? `<img src="${entry.texture}" alt="">` : ''}
+      ${entry.iconTexture || entry.texture ? `<img src="${entry.iconTexture || entry.texture}" alt="">` : ''}
       <div class="info">
         <span class="name">${escapeHtml(entry.displayName)}</span>
         <span class="id">${entry.id}</span>

@@ -13,6 +13,7 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
   fill, save & load builds, export to JSON.
 - **Creative inventory**: press `E` in the Builder to open a polished
   Minecraft-inspired inventory with categories, search, and block previews.
+  Inventory slots prefer item-model icons from the jar when available.
 - **Blocks browser**: searchable list of every block and item in the loaded
   pack, with textures resolved from each block's model chain.
 - **Recipe view**: pick any item and see all its crafting / smelting /
@@ -35,6 +36,7 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
   other connecting blocks.
 - **Stable fence connectors**: fences use vanilla-like post and rail geometry
   with jar-sourced textures so wood variants connect consistently.
+  Wood fences prefer their matching plank texture for clean rails.
 - **Vanilla-like placement states**: axis blocks such as logs orient from the
   clicked face, while supported horizontal blocks use placement-facing state.
 - **Local-only**: the jar is parsed in your browser using JSZip and cached in

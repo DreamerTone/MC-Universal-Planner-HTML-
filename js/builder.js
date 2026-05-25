@@ -527,7 +527,7 @@
       const materialForFace = (name) => {
         const texRef = face[name] && face[name].texture;
         const url = texRef ? this.registry.textureUrlForModelRef(texRef, part.textures, part.ns) : null;
-        return url ? this._materialFromUrl(url, { modelUv: true }) : this._transparentMaterial();
+        return url ? this._materialFromUrl(url) : this._transparentMaterial();
       };
       const faceNames = ['east', 'west', 'up', 'down', 'south', 'north'].filter(name => face[name]);
       const materials = faceNames.map(materialForFace);
@@ -561,8 +561,8 @@
         const base = positions.length / 3;
         for (const p of corners[name]) positions.push(p[0], p[1], p[2]);
         const uv = face.uv || [0, 0, 16, 16];
-        const u1 = uv[0] / 16, v1 = 1 - uv[1] / 16;
-        const u2 = uv[2] / 16, v2 = 1 - uv[3] / 16;
+        const u1 = uv[0] / 16, v1 = uv[1] / 16;
+        const u2 = uv[2] / 16, v2 = uv[3] / 16;
         const uvQuad = [[u1, v2], [u2, v2], [u2, v1], [u1, v1]];
         const rotation = ((face.rotation || 0) / 90) % 4;
         for (let i = 0; i < 4; i++) {
@@ -639,10 +639,27 @@
     }
 
     _textureUrlForEntry(entry) {
-      return entry?.textureSet?.side
+      return this._plankTextureForFence(entry)
+        || entry?.textureSet?.side
         || entry?.textureSet?.all
         || entry?.texture
         || null;
+    }
+
+    _plankTextureForFence(entry) {
+      if (!entry || entry.renderHint?.shape !== 'fence') return null;
+      const base = entry.name.replace(/_fence(?:_gate)?$/, '');
+      const candidates = [
+        `block/${base}_planks`,
+        `block/${base}_stem`,
+        `block/${base}_hyphae`,
+        `block/${base}_block`,
+      ];
+      for (const path of candidates) {
+        const url = this.registry.textureUrl(entry.ns, path);
+        if (url) return url;
+      }
+      return null;
     }
 
     _transparentMaterial() {
@@ -683,8 +700,8 @@
         : new THREE.MeshLambertMaterial({ color: 0x55606f });
     }
 
-    _materialFromUrl(url, opts = {}) {
-      const tex = this._textureForUrl(url, opts);
+    _materialFromUrl(url) {
+      const tex = this._textureForUrl(url);
       return tex
         ? new THREE.MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide })
         : new THREE.MeshLambertMaterial({ color: 0x55606f });
@@ -773,12 +790,11 @@
       return t;
     }
 
-    _textureForUrl(url, opts = {}) {
+    _textureForUrl(url) {
       if (!url) return null;
-      const key = `${url}|${opts.modelUv ? 'model' : 'default'}`;
+      const key = url;
       if (this._textures.has(key)) return this._textures.get(key);
       const t = new THREE.TextureLoader().load(url, () => { this._needsRender = true; });
-      if (opts.modelUv) t.flipY = false;
       t.magFilter = THREE.NearestFilter;
       t.minFilter = THREE.NearestFilter;
       t.colorSpace = THREE.SRGBColorSpace;
