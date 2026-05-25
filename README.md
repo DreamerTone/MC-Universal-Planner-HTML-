@@ -42,6 +42,9 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
 - **Model inspector**: open `model-inspector.html` to load a jar, preview the
   exact block model parts the planner sees, edit blockstate JSON, and compare
   rendered cuboids against raw blockstate/model data.
+- **Strict cube detection**: cube-vs-custom model decisions are based on
+  resolved model elements, not just block names or texture parents. Inspector
+  rows show whether each block is a full cube or a shaped/custom model.
 - **Local-only**: the jar is parsed in your browser using JSZip and cached in
   IndexedDB. The file never leaves your machine.
 

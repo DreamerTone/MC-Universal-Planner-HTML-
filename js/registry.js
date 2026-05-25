@@ -260,7 +260,8 @@
       const model = ref ? this._modelForRef(ref, ns) : null;
       const parent = (model && model.parent) || ref || '';
       const hay = `${name} ${parent}`.toLowerCase();
-      const elements = model && Array.isArray(model.elements) ? model.elements : [];
+      const elements = model ? this._collectModelElements(model, new Set()) : [];
+      const fullCube = this._looksFullCube(elements);
       let shape = 'cube';
 
       if (/(cross|crop|plant|sapling|flower|mushroom|stem)/.test(hay)) shape = 'cross';
@@ -271,15 +272,16 @@
       else if (/wall/.test(hay)) shape = 'wall';
       else if (/trapdoor/.test(hay)) shape = 'trapdoor';
       else if (/door/.test(hay)) shape = 'door';
+      else if (/sign/.test(hay)) shape = 'custom';
       else if (/carpet/.test(hay)) shape = 'carpet';
-      else if (elements.length && !this._looksFullCube(elements)) shape = 'custom';
+      else if (!fullCube) shape = 'custom';
 
       return {
         shape,
         modelRef: ref,
         parent: model ? (model.parent || null) : null,
         elementCount: elements.length,
-        fullCube: !elements.length || this._looksFullCube(elements),
+        fullCube,
       };
     }
 
@@ -307,13 +309,17 @@
     }
 
     _looksFullCube(elements) {
-      if (!elements.length) return true;
-      return elements.some(el => {
-        const from = el.from || [];
-        const to = el.to || [];
-        return from[0] <= 0 && from[1] <= 0 && from[2] <= 0
-          && to[0] >= 16 && to[1] >= 16 && to[2] >= 16;
-      });
+      if (elements.length !== 1) return false;
+      const el = elements[0];
+      if (el.rotation) return false;
+      const from = el.from || [];
+      const to = el.to || [];
+      const faces = el.faces || {};
+      const hasAllFaces = ['up', 'down', 'north', 'south', 'east', 'west']
+        .every(face => !!faces[face]);
+      return hasAllFaces
+        && from[0] === 0 && from[1] === 0 && from[2] === 0
+        && to[0] === 16 && to[1] === 16 && to[2] === 16;
     }
 
     _classify(ns, name, kind, nsData) {

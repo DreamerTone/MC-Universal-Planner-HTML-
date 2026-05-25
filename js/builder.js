@@ -560,7 +560,7 @@
         const face = el.faces[name];
         const base = positions.length / 3;
         for (const p of corners[name]) positions.push(p[0], p[1], p[2]);
-        const uv = face.uv || [0, 0, 16, 16];
+        const uv = face.uv || this._defaultFaceUv(name, from, to);
         const u1 = uv[0] / 16, v1 = uv[1] / 16;
         const u2 = uv[2] / 16, v2 = uv[3] / 16;
         const uvQuad = [[u1, v2], [u2, v2], [u2, v1], [u1, v1]];
@@ -578,6 +578,22 @@
       geom.setIndex(indices);
       geom.computeVertexNormals();
       return geom;
+    }
+
+    _defaultFaceUv(name, from, to) {
+      switch (name) {
+        case 'up':
+        case 'down':
+          return [from[0], from[2], to[0], to[2]];
+        case 'north':
+        case 'south':
+          return [from[0], 16 - to[1], to[0], 16 - from[1]];
+        case 'east':
+        case 'west':
+          return [from[2], 16 - to[1], to[2], 16 - from[1]];
+        default:
+          return [0, 0, 16, 16];
+      }
     }
 
     _rotatedElementGroup(mesh, rot) {

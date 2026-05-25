@@ -673,16 +673,25 @@ code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size:
   background: var(--bg);
   image-rendering: pixelated;
 }
-.inspect-row span {
+.inspect-row-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+.inspect-row-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .inspect-row strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  min-width: 0;
 }
 .inspect-row em {
   overflow: hidden;
@@ -692,6 +701,24 @@ code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size:
   font-style: normal;
   font-size: 11px;
   font-family: ui-monospace, "SF Mono", monospace;
+}
+.shape-pill {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  text-transform: uppercase;
+}
+.shape-pill.full {
+  color: #9bd4ff;
+  border-color: rgba(105, 166, 220, 0.45);
+}
+.shape-pill.custom {
+  color: #ffd28a;
+  border-color: rgba(255, 180, 82, 0.45);
 }
 .inspect-more {
   padding: 10px;
