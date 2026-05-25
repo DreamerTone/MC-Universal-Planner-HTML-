@@ -499,6 +499,7 @@
     }
 
     _objectFor(entry, state) {
+      if (entry && entry.renderHint?.shape === 'fence') return this._fenceObjectFor(entry, state || {});
       const parts = entry ? this.registry.modelPartsForBlock(entry.id, state || {}) : [];
       if (parts.length) return this._objectFromModelParts(entry, parts);
       return this._fallbackObjectFor(entry);
@@ -526,7 +527,7 @@
       const materialForFace = (name) => {
         const texRef = face[name] && face[name].texture;
         const url = texRef ? this.registry.textureUrlForModelRef(texRef, part.textures, part.ns) : null;
-        return url ? this._materialFromUrl(url) : this._transparentMaterial();
+        return url ? this._materialFromUrl(url, { modelUv: true }) : this._transparentMaterial();
       };
       const faceNames = ['east', 'west', 'up', 'down', 'south', 'north'].filter(name => face[name]);
       const materials = faceNames.map(materialForFace);
@@ -601,6 +602,49 @@
       return root;
     }
 
+    _fenceObjectFor(entry, state) {
+      const root = new THREE.Group();
+      const mat = this._materialFromUrl(this._textureUrlForEntry(entry));
+      this._addBox(root, [6, 0, 6], [10, 16, 10], mat);
+      if (state.north) {
+        this._addBox(root, [7, 12, 0], [9, 15, 9], mat);
+        this._addBox(root, [7, 6, 0], [9, 9, 9], mat);
+      }
+      if (state.south) {
+        this._addBox(root, [7, 12, 7], [9, 15, 16], mat);
+        this._addBox(root, [7, 6, 7], [9, 9, 16], mat);
+      }
+      if (state.east) {
+        this._addBox(root, [7, 12, 7], [16, 15, 9], mat);
+        this._addBox(root, [7, 6, 7], [16, 9, 9], mat);
+      }
+      if (state.west) {
+        this._addBox(root, [0, 12, 7], [9, 15, 9], mat);
+        this._addBox(root, [0, 6, 7], [9, 9, 9], mat);
+      }
+      return root;
+    }
+
+    _addBox(root, from, to, material) {
+      const sx = Math.max(0.001, (to[0] - from[0]) / 16);
+      const sy = Math.max(0.001, (to[1] - from[1]) / 16);
+      const sz = Math.max(0.001, (to[2] - from[2]) / 16);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), material);
+      mesh.position.set(
+        (from[0] + to[0]) / 32 - 0.5,
+        (from[1] + to[1]) / 32 - 0.5,
+        (from[2] + to[2]) / 32 - 0.5,
+      );
+      root.add(mesh);
+    }
+
+    _textureUrlForEntry(entry) {
+      return entry?.textureSet?.side
+        || entry?.textureSet?.all
+        || entry?.texture
+        || null;
+    }
+
     _transparentMaterial() {
       if (!this._transparentMat) {
         this._transparentMat = new THREE.MeshBasicMaterial({
@@ -639,8 +683,8 @@
         : new THREE.MeshLambertMaterial({ color: 0x55606f });
     }
 
-    _materialFromUrl(url) {
-      const tex = this._textureForUrl(url);
+    _materialFromUrl(url, opts = {}) {
+      const tex = this._textureForUrl(url, opts);
       return tex
         ? new THREE.MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide })
         : new THREE.MeshLambertMaterial({ color: 0x55606f });
@@ -729,14 +773,16 @@
       return t;
     }
 
-    _textureForUrl(url) {
+    _textureForUrl(url, opts = {}) {
       if (!url) return null;
-      if (this._textures.has(url)) return this._textures.get(url);
+      const key = `${url}|${opts.modelUv ? 'model' : 'default'}`;
+      if (this._textures.has(key)) return this._textures.get(key);
       const t = new THREE.TextureLoader().load(url, () => { this._needsRender = true; });
+      if (opts.modelUv) t.flipY = false;
       t.magFilter = THREE.NearestFilter;
       t.minFilter = THREE.NearestFilter;
       t.colorSpace = THREE.SRGBColorSpace;
-      this._textures.set(url, t);
+      this._textures.set(key, t);
       return t;
     }
 

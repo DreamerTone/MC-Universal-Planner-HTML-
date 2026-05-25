@@ -33,6 +33,8 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
 - **Jar-driven block meshes**: block models now render from vanilla/mod jar
   model elements where possible, including multipart models used by fences and
   other connecting blocks.
+- **Stable fence connectors**: fences use vanilla-like post and rail geometry
+  with jar-sourced textures so wood variants connect consistently.
 - **Vanilla-like placement states**: axis blocks such as logs orient from the
   clicked face, while supported horizontal blocks use placement-facing state.
 - **Local-only**: the jar is parsed in your browser using JSZip and cached in
