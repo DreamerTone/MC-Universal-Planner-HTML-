@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MC Universal Planner</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- JAR GATE: shown until a vanilla jar has been loaded -->
+<section id="gate" class="gate">
+  <div class="gate-card">
+    <h1>MC Universal Planner</h1>
+    <p class="tagline">Vanilla blocks, recipes, and a build grid &mdash; powered by your game's own <code>.jar</code>.</p>
+
+    <div id="gate-drop" class="drop-zone" tabindex="0">
+      <div class="drop-inner">
+        <div class="drop-icon">&#x21E9;</div>
+        <div class="drop-text">
+          <strong>Drop a Minecraft client .jar here</strong>
+          <span>or click to choose a file</span>
+        </div>
+        <input id="gate-file" type="file" accept=".jar,application/java-archive,application/zip" hidden>
+      </div>
+    </div>
+
+    <div id="gate-cached" class="cached hidden">
+      <p>A previously loaded pack is cached.</p>
+      <div class="cached-info">
+        <div><span class="lbl">File</span><span id="cached-name">-</span></div>
+        <div><span class="lbl">MC version</span><span id="cached-version">-</span></div>
+      </div>
+      <div class="row">
+        <button id="gate-use-cached" class="btn primary">Continue with cached pack</button>
+        <button id="gate-clear-cached" class="btn ghost">Forget &amp; load new</button>
+      </div>
+    </div>
+
+    <div id="gate-status" class="status"></div>
+
+    <details class="help">
+      <summary>Where do I find a vanilla .jar?</summary>
+      <p>Vanilla client jars live in your Minecraft installation:</p>
+      <ul>
+        <li><b>Windows</b>: <code>%appdata%\.minecraft\versions\&lt;version&gt;\&lt;version&gt;.jar</code></li>
+        <li><b>macOS</b>: <code>~/Library/Application Support/minecraft/versions/&lt;version&gt;/&lt;version&gt;.jar</code></li>
+        <li><b>Linux</b>: <code>~/.minecraft/versions/&lt;version&gt;/&lt;version&gt;.jar</code></li>
+      </ul>
+      <p>Use the <i>client</i> jar (not the server jar) so block textures are included. Files stay on your device &mdash; nothing is uploaded.</p>
+    </details>
+  </div>
+</section>
+
+<!-- MAIN APP: hidden until gate is cleared -->
+<section id="app" class="app hidden">
+  <header class="topbar">
+    <div class="brand">MC Universal Planner</div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="builder">Builder</button>
+      <button class="tab" data-tab="recipes">Recipes</button>
+      <button class="tab" data-tab="browser">Blocks</button>
+      <button class="tab" data-tab="materials">Materials</button>
+    </nav>
+    <div class="pack-meta">
+      <span id="pack-version">-</span>
+      <button id="change-pack" class="btn ghost small" title="Load a different jar">Change jar</button>
+    </div>
+  </header>
+
+  <main id="views">
+
+    <!-- BUILDER VIEW -->
+    <section class="view active" data-view="builder">
+      <aside class="palette">
+        <div class="palette-head">
+          <input id="palette-search" type="search" placeholder="Search blocks...">
+          <div class="palette-tools">
+            <button id="tool-place" class="tool active" data-tool="place" title="Place block">Place</button>
+            <button id="tool-erase" class="tool" data-tool="erase" title="Erase block">Erase</button>
+            <button id="tool-pick" class="tool" data-tool="pick" title="Pick block from grid">Pick</button>
+            <button id="tool-fill" class="tool" data-tool="fill" title="Fill layer">Fill</button>
+          </div>
+        </div>
+        <div id="selected-block" class="selected-block">
+          <span>No block selected</span>
+        </div>
+        <div id="palette-grid" class="palette-grid"></div>
+      </aside>
+
+      <div class="builder-main">
+        <div class="builder-toolbar">
+          <div class="row">
+            <label>Size</label>
+            <input id="grid-w" type="number" min="1" max="64" value="16" title="Width (X)">
+            <span>&times;</span>
+            <input id="grid-d" type="number" min="1" max="64" value="16" title="Depth (Z)">
+            <span>&times;</span>
+            <input id="grid-h" type="number" min="1" max="64" value="8" title="Height (Y layers)">
+            <button id="apply-size" class="btn small">Apply</button>
+          </div>
+          <div class="row">
+            <label>Layer (Y)</label>
+            <input id="layer-slider" type="range" min="0" max="7" value="0">
+            <span id="layer-num">0</span>
+            <label class="check"><input id="show-below" type="checkbox" checked> show layer below</label>
+          </div>
+          <div class="row">
+            <button id="clear-layer" class="btn ghost small">Clear layer</button>
+            <button id="clear-build" class="btn danger small">Clear all</button>
+            <button id="save-build" class="btn small">Save</button>
+            <button id="load-build" class="btn small">Load</button>
+            <button id="export-build" class="btn small">Export JSON</button>
+            <input id="import-build" type="file" accept=".json" hidden>
+            <button id="import-build-btn" class="btn small">Import JSON</button>
+          </div>
+        </div>
+        <div class="grid-wrap">
+          <canvas id="grid-canvas"></canvas>
+        </div>
+        <div class="grid-status">
+          <span id="cursor-coords">-</span>
+          <span id="cell-info"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECIPES VIEW -->
+    <section class="view" data-view="recipes">
+      <div class="panel">
+        <div class="row gap">
+          <input id="recipe-search" type="search" placeholder="Search items / blocks (e.g. piston, oak_planks)">
+          <label>Count <input id="recipe-count" type="number" min="1" value="1"></label>
+          <label class="check"><input id="recipe-break-raw" type="checkbox" checked> Break down to raw materials</label>
+        </div>
+        <div class="recipe-layout">
+          <div id="recipe-results" class="recipe-results"></div>
+          <div id="recipe-detail" class="recipe-detail">
+            <p class="muted">Select an item to see its recipe and total materials.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BLOCK BROWSER -->
+    <section class="view" data-view="browser">
+      <div class="panel">
+        <div class="row gap">
+          <input id="browser-search" type="search" placeholder="Search all blocks &amp; items">
+          <label>Namespace
+            <select id="browser-ns"></select>
+          </label>
+          <label>Type
+            <select id="browser-type">
+              <option value="all">All</option>
+              <option value="block">Blocks</option>
+              <option value="item">Items</option>
+            </select>
+          </label>
+          <span id="browser-count" class="muted"></span>
+        </div>
+        <div id="browser-grid" class="browser-grid"></div>
+      </div>
+    </section>
+
+    <!-- MATERIALS / BUILD COST -->
+    <section class="view" data-view="materials">
+      <div class="panel">
+        <div class="row gap">
+          <h2>Build materials</h2>
+          <label class="check"><input id="mat-break-raw" type="checkbox" checked> Break down to raw materials</label>
+          <button id="mat-refresh" class="btn small">Refresh</button>
+        </div>
+        <p class="muted">Total blocks placed in the current build, with the materials needed to craft them.</p>
+        <div id="materials-content"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+</section>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+<!-- app -->
+<script src="js/storage.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/jar-loader.js"></script>
+<script src="js/registry.js"></script>
+<script src="js/recipes.js"></script>
+<script src="js/builder.js"></script>
+<script src="js/browser-view.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
