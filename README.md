@@ -39,6 +39,9 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
   Wood fences prefer their matching plank texture for clean rails.
 - **Vanilla-like placement states**: axis blocks such as logs orient from the
   clicked face, while supported horizontal blocks use placement-facing state.
+- **Model inspector**: open `model-inspector.html` to load a jar, preview the
+  exact block model parts the planner sees, edit blockstate JSON, and compare
+  rendered cuboids against raw blockstate/model data.
 - **Local-only**: the jar is parsed in your browser using JSZip and cached in
   IndexedDB. The file never leaves your machine.
 
@@ -72,3 +75,5 @@ python3 -m http.server 8000
 ```
 
 Then visit `http://localhost:8000/`.
+
+For mesh debugging, visit `http://localhost:8000/model-inspector.html`.

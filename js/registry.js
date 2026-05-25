@@ -755,6 +755,40 @@
       return this._modelPartsForBlock(id, state);
     }
 
+    debugBlock(id, state = {}) {
+      const entry = this.blocks.get(id);
+      if (!entry) return null;
+      const nsData = this._packFor(entry.ns)?.namespaces[entry.ns];
+      const blockstate = nsData?.blockstates.get(entry.name) || null;
+      const directBlockModel = nsData?.models.get(`block/${entry.name}`) || null;
+      const itemModel = nsData?.models.get(`item/${entry.name}`) || null;
+      const parts = this._modelPartsForBlock(id, state).map(part => ({
+        x: part.x,
+        y: part.y,
+        uvlock: part.uvlock,
+        ns: part.ns,
+        textures: part.textures,
+        elements: part.elements,
+      }));
+      return {
+        entry: {
+          id: entry.id,
+          displayName: entry.displayName,
+          category: entry.category,
+          renderHint: entry.renderHint,
+          behavior: entry.behavior,
+          texture: entry.texture,
+          iconTexture: entry.iconTexture,
+          textureSet: entry.textureSet,
+        },
+        state,
+        blockstate,
+        directBlockModel,
+        itemModel,
+        parts,
+      };
+    }
+
     textureUrlForModelRef(ref, textures = {}, defaultNs = 'minecraft') {
       let val = ref;
       let safety = 8;

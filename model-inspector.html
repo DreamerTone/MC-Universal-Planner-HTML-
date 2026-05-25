@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MC Model Inspector</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<section class="inspector-app">
+  <header class="topbar">
+    <div class="brand">MC Model Inspector</div>
+    <div class="tabs">
+      <a class="tab" href="index.html">Planner</a>
+      <span class="tab active">Inspector</span>
+    </div>
+    <div class="pack-meta">
+      <span id="inspect-pack-version">No jar loaded</span>
+    </div>
+  </header>
+
+  <main class="inspector-layout">
+    <aside class="inspector-sidebar">
+      <div id="inspect-drop" class="drop-zone small" tabindex="0">
+        <div class="drop-inner">
+          <div class="drop-icon">&#x21E9;</div>
+          <div class="drop-text">
+            <strong>Drop a client .jar</strong>
+            <span>or click to choose</span>
+          </div>
+          <input id="inspect-file" type="file" accept=".jar,.zip,application/java-archive,application/zip" hidden>
+        </div>
+      </div>
+      <div id="inspect-status" class="status"></div>
+
+      <div class="inspector-filter">
+        <input id="inspect-search" type="search" placeholder="Search blocks">
+        <select id="inspect-namespace"></select>
+      </div>
+      <div id="inspect-count" class="muted"></div>
+      <div id="inspect-list" class="inspect-list"></div>
+    </aside>
+
+    <section class="inspector-main">
+      <div class="inspector-preview">
+        <canvas id="inspect-canvas"></canvas>
+      </div>
+      <div class="inspector-details">
+        <div class="detail-head">
+          <div>
+            <h2 id="inspect-title">Load a jar to inspect models</h2>
+            <div id="inspect-subtitle" class="muted"></div>
+          </div>
+          <button id="inspect-render" class="btn small">Render State</button>
+        </div>
+
+        <label class="state-editor-label">State JSON</label>
+        <textarea id="inspect-state" class="state-editor" spellcheck="false">{
+  "north": false,
+  "east": false,
+  "south": false,
+  "west": false
+}</textarea>
+
+        <div class="debug-grid">
+          <section>
+            <h3>What The Renderer Sees</h3>
+            <pre id="inspect-summary" class="debug-pre">No block selected.</pre>
+          </section>
+          <section>
+            <h3>Raw Blockstate / Models</h3>
+            <pre id="inspect-json" class="debug-pre">No block selected.</pre>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/jar-loader.js"></script>
+<script src="js/registry.js"></script>
+<script src="js/model-inspector.js"></script>
+
+</body>
+</html>
