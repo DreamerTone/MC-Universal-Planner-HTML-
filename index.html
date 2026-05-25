@@ -61,6 +61,7 @@
       <button class="tab" data-tab="recipes">Recipes</button>
       <button class="tab" data-tab="browser">Blocks</button>
       <button class="tab" data-tab="materials">Materials</button>
+      <button class="tab" data-tab="packs">Packs</button>
     </nav>
     <div class="pack-meta">
       <span id="pack-version">-</span>
@@ -75,6 +76,7 @@
       <aside class="palette">
         <div class="palette-head">
           <input id="palette-search" type="search" placeholder="Search blocks...">
+          <select id="palette-category" title="Filter by category"></select>
           <div class="palette-tools">
             <button id="tool-place" class="tool active" data-tool="place" title="Place block">Place</button>
             <button id="tool-erase" class="tool" data-tool="erase" title="Erase block">Erase</button>
@@ -153,6 +155,9 @@
               <option value="item">Items</option>
             </select>
           </label>
+          <label>Category
+            <select id="browser-category"></select>
+          </label>
           <span id="browser-count" class="muted"></span>
         </div>
         <div id="browser-grid" class="browser-grid"></div>
@@ -169,6 +174,28 @@
         </div>
         <p class="muted">Total blocks placed in the current build, with the materials needed to craft them.</p>
         <div id="materials-content"></div>
+      </div>
+    </section>
+
+    <!-- PACK MANAGER -->
+    <section class="view" data-view="packs">
+      <div class="panel">
+        <div class="pack-layout">
+          <section>
+            <div class="row gap">
+              <h2>Loaded packs</h2>
+              <button id="pack-add-jar" class="btn small">Add jar or zip</button>
+              <input id="pack-add-file" type="file" accept=".jar,.zip,application/java-archive,application/zip" hidden>
+            </div>
+            <p class="muted">Layer vanilla first, then mod jars or data/resource packs. Namespaces stay separate so future modpack support can classify and render each pack without hard-coded vanilla lists.</p>
+            <div id="pack-list" class="pack-list"></div>
+          </section>
+          <section>
+            <h2>Classification</h2>
+            <p class="muted">The planner currently guesses categories from registry ids, tags, models, and recipe shapes. Unknown modded content is kept visible instead of hidden, then can be refined into custom rules later.</p>
+            <div id="category-list" class="category-list"></div>
+          </section>
+        </div>
       </div>
     </section>
 

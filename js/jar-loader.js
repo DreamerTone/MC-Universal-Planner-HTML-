@@ -15,6 +15,7 @@
     lang:       /^assets\/([^/]+)\/lang\/en_us\.json$/,
     recipe:     /^data\/([^/]+)\/recipes?\/(.+)\.json$/,
     tag:        /^data\/([^/]+)\/tags\/(?:item|items|block|blocks)\/(.+)\.json$/,
+    manifest:   /^(fabric\.mod\.json|META-INF\/mods\.toml|mcmod\.info|pack\.mcmeta)$/,
   };
 
   async function loadJar(file, onProgress) {
@@ -24,8 +25,10 @@
     const pack = {
       sourceName: file.name,
       sourceSize: file.size,
+      sourceType: 'unknown',
       mcVersion: null,
       packFormat: null,
+      mods: [],
       namespaces: {}, // ns -> { blocks, items, recipes, models, textures, tags, lang, blockstates }
     };
 
@@ -67,6 +70,7 @@
       await new Promise(r => setTimeout(r, 0));
     }
 
+    pack.sourceType = inferSourceType(pack);
     return pack;
   }
 
@@ -122,11 +126,71 @@
         const [, ns] = m;
         const json = JSON.parse(await entry.async('string'));
         Object.assign(ensureNs(pack, ns).lang, json);
+      } else if ((m = path.match(RE.manifest))) {
+        await processManifest(path, entry, pack);
       }
     } catch (e) {
       // Single corrupt file shouldn't abort the load
       console.warn('[jar-loader] failed on', path, e);
     }
+  }
+
+  async function processManifest(path, entry, pack) {
+    const raw = await entry.async('string');
+    if (path === 'fabric.mod.json') {
+      const json = JSON.parse(raw);
+      pack.mods.push({
+        loader: 'fabric',
+        id: json.id || null,
+        name: json.name || json.id || 'Fabric mod',
+        version: json.version || null,
+      });
+      return;
+    }
+    if (path === 'META-INF/mods.toml') {
+      const mods = raw.split(/\[\[mods\]\]/g).slice(1);
+      for (const block of mods) {
+        pack.mods.push({
+          loader: 'forge',
+          id: pickTomlString(block, 'modId'),
+          name: pickTomlString(block, 'displayName') || pickTomlString(block, 'modId') || 'Forge mod',
+          version: pickTomlString(block, 'version'),
+        });
+      }
+      return;
+    }
+    if (path === 'mcmod.info') {
+      const json = JSON.parse(raw);
+      const list = Array.isArray(json) ? json : (json.modList || []);
+      for (const mod of list) {
+        pack.mods.push({
+          loader: 'legacy',
+          id: mod.modid || mod.id || null,
+          name: mod.name || mod.modid || 'Legacy mod',
+          version: mod.version || null,
+        });
+      }
+      return;
+    }
+    if (path === 'pack.mcmeta') {
+      const json = JSON.parse(raw);
+      const packMeta = json.pack || {};
+      pack.packFormat = pack.packFormat || packMeta.pack_format || null;
+      pack.description = packMeta.description || null;
+    }
+  }
+
+  function pickTomlString(block, key) {
+    const m = block.match(new RegExp(`^\\s*${key}\\s*=\\s*["']([^"']+)["']`, 'm'));
+    return m ? m[1] : null;
+  }
+
+  function inferSourceType(pack) {
+    if (pack.mods.length) return 'mod';
+    if (pack.mcVersion) return 'base';
+    if (pack.packFormat) return 'resource-or-data-pack';
+    if (pack.namespaces.minecraft && Object.keys(pack.namespaces).length === 1) return 'base';
+    return 'addon';
   }
 
   global.MCJarLoader = { loadJar };

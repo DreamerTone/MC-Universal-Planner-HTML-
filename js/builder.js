@@ -82,6 +82,7 @@
       this.cells = new Map();        // "x,y,z" -> { id, mesh }
       this._textures = new Map();    // id -> THREE.Texture
       this._materials = new Map();   // id -> THREE.Material
+      this._geometries = new Map();  // render shape -> THREE.BufferGeometry
       this._sharedGeom = null;
       this.tool = 'place';
       this.selected = null;
@@ -364,8 +365,10 @@
         if (existing.id === id) return;
         this.scene.remove(existing.mesh);
       }
-      const mesh = new THREE.Mesh(this._sharedGeom, this._materialFor(id));
-      mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+      const entry = this.registry.get(id);
+      const mesh = new THREE.Mesh(this._geometryFor(entry), this._materialFor(id));
+      const offset = this._meshOffsetFor(entry);
+      mesh.position.set(x + 0.5 + offset.x, y + 0.5 + offset.y, z + 0.5 + offset.z);
       mesh.userData.cellKey = key;
       this.scene.add(mesh);
       this.cells.set(key, { id, mesh });
@@ -390,6 +393,61 @@
         : new THREE.MeshLambertMaterial({ color: 0x55606f });
       this._materials.set(id, mat);
       return mat;
+    }
+
+    _geometryFor(entry) {
+      const shape = entry && entry.renderHint ? entry.renderHint.shape : 'cube';
+      if (this._geometries.has(shape)) return this._geometries.get(shape);
+      let geom;
+      switch (shape) {
+        case 'slab':
+          geom = new THREE.BoxGeometry(1, 0.5, 1);
+          break;
+        case 'stairs':
+          geom = new THREE.BoxGeometry(1, 0.75, 1);
+          break;
+        case 'pane':
+          geom = new THREE.BoxGeometry(0.14, 1, 1);
+          break;
+        case 'fence':
+          geom = new THREE.BoxGeometry(0.28, 1, 0.28);
+          break;
+        case 'wall':
+          geom = new THREE.BoxGeometry(0.55, 1, 0.55);
+          break;
+        case 'door':
+          geom = new THREE.BoxGeometry(1, 1, 0.16);
+          break;
+        case 'trapdoor':
+          geom = new THREE.BoxGeometry(1, 0.1875, 1);
+          break;
+        case 'carpet':
+          geom = new THREE.BoxGeometry(1, 0.0625, 1);
+          break;
+        case 'cross':
+          geom = new THREE.BoxGeometry(0.82, 0.82, 0.82);
+          break;
+        case 'custom':
+          geom = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+          break;
+        default:
+          geom = this._sharedGeom;
+      }
+      this._geometries.set(shape, geom);
+      return geom;
+    }
+
+    _meshOffsetFor(entry) {
+      const shape = entry && entry.renderHint ? entry.renderHint.shape : 'cube';
+      switch (shape) {
+        case 'slab': return new THREE.Vector3(0, -0.25, 0);
+        case 'stairs': return new THREE.Vector3(0, -0.125, 0);
+        case 'trapdoor': return new THREE.Vector3(0, -0.40625, 0);
+        case 'carpet': return new THREE.Vector3(0, -0.46875, 0);
+        case 'cross': return new THREE.Vector3(0, -0.09, 0);
+        case 'custom': return new THREE.Vector3(0, -0.05, 0);
+        default: return new THREE.Vector3(0, 0, 0);
+      }
     }
 
     _textureFor(entry) {

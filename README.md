@@ -18,16 +18,27 @@ straight from your game files &mdash; no servers, no uploads, nothing baked in.
   count.
 - **Build materials**: aggregate all blocks placed in the current build and
   optionally break them down to raw materials using the in-game recipe graph.
+- **Pack manager**: start with a vanilla client jar, then add extra mod jars,
+  data packs, or resource packs into the same session.
+- **Smart classification**: blocks and items are grouped into planner-friendly
+  categories like Building, Production, Power, Storage, Tools, Food, and more.
+- **Model hints**: the registry records basic shape hints such as cube, slab,
+  stairs, pane, fence, door, trapdoor, crop/cross, and custom for future mesh
+  upgrades.
 - **Local-only**: the jar is parsed in your browser using JSZip and cached in
   IndexedDB. The file never leaves your machine.
 
 ## Built for future mod support
 
 The jar loader and registry are namespace-agnostic. Vanilla data lives under
-the `minecraft` namespace; mod jars use their own namespaces. Loading
-additional jars in the future will be a matter of calling
-`registry.addPack(pack)` &mdash; texture resolution, recipes, and tags already
-walk all loaded namespaces.
+the `minecraft` namespace; mod jars use their own namespaces. Additional jars
+can now be layered through the Packs tab, where the app merges namespaces,
+textures, recipes, tags, model hints, and classification metadata.
+
+The current modpack support is intentionally conservative: unknown content is
+kept visible and classified by heuristics instead of being hidden. This makes it
+ready for future user-editable rules and machine recipe types without changing
+the project file format.
 
 ## Getting a vanilla client jar
 

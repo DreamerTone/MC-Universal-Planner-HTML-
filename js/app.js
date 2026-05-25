@@ -4,11 +4,13 @@
 
   const state = {
     pack: null,
+    packs: [],
     registry: new MCRegistry(),
     calc: null,
     builder: null,
     browserView: null,
     currentRecipeId: null,
+    appReady: false,
   };
 
   /* ====================================================================
@@ -65,17 +67,38 @@
       const blocksCount = sumBy(pack, n => n.blocks.size);
       const itemsCount = sumBy(pack, n => n.items.size);
       const recipesCount = sumBy(pack, n => n.recipes.size);
-      if (blocksCount === 0 && recipesCount === 0) {
+      if (blocksCount === 0 && itemsCount === 0 && recipesCount === 0) {
         setStatus('No blocks or recipes found. Is this a vanilla client jar (not the server jar)?', 'error');
         return;
       }
+
+      if (opts.additive) {
+        state.packs.push(pack);
+        state.registry.addPack(pack);
+        state.calc = new MCRecipes(state.registry);
+
+        if (!opts.fromCache) {
+          await MCStorage.savePack(`addon:${Date.now()}:${name}`, file, {
+            sourceType: pack.sourceType,
+            mcVersion: pack.mcVersion,
+            packFormat: pack.packFormat,
+          }).catch(err => console.warn('addon cache save failed', err));
+        }
+
+        refreshRegistryViews();
+        toast(`Added ${name}: ${blocksCount.toLocaleString()} blocks, ${itemsCount.toLocaleString()} items.`, 'ok');
+        return;
+      }
+
       state.pack = pack;
+      state.packs = [pack];
       state.registry.reset();
       state.registry.addPack(pack);
       state.calc = new MCRecipes(state.registry);
 
       if (!opts.fromCache) {
         await MCStorage.savePack('primary', file, {
+          sourceType: pack.sourceType,
           mcVersion: pack.mcVersion,
           packFormat: pack.packFormat,
         }).catch(err => console.warn('cache save failed', err));
@@ -87,9 +110,19 @@
         'ok'
       );
       enterApp(pack);
+      if (opts.fromCache) loadCachedAddons();
     } catch (err) {
       console.error(err);
       setStatus(`Failed to read jar: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function loadCachedAddons() {
+    const packs = await MCStorage.listPacks().catch(() => []);
+    const addons = packs.filter(p => String(p.slot || '').startsWith('addon:'));
+    for (const addon of addons) {
+      if (!addon.blob) continue;
+      await handleJar(new File([addon.blob], addon.name), { fromCache: true, additive: true });
     }
   }
 
@@ -104,36 +137,44 @@
   function enterApp(pack) {
     el('#gate').classList.add('hidden');
     el('#app').classList.remove('hidden');
-    el('#pack-version').textContent = pack.mcVersion
-      ? `MC ${pack.mcVersion}` + (pack.packFormat ? ` (pack ${pack.packFormat})` : '')
-      : 'MC version unknown';
+    updatePackMeta();
 
-    // Tabs
-    els('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
-    el('#change-pack').addEventListener('click', () => {
-      el('#app').classList.add('hidden');
-      el('#gate').classList.remove('hidden');
-      setStatus('');
-    });
+    if (!state.appReady) {
+      // Tabs
+      els('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+      el('#change-pack').addEventListener('click', () => {
+        el('#app').classList.add('hidden');
+        el('#gate').classList.remove('hidden');
+        setStatus('');
+      });
 
-    initBuilderView();
-    initRecipesView();
-    initBrowserView();
-    initMaterialsView();
+      initBuilderView();
+      initRecipesView();
+      initBrowserView();
+      initMaterialsView();
+      initPackManagerView();
+      state.appReady = true;
+    } else {
+      if (state.builder) state.builder.clear();
+      refreshRegistryViews();
+    }
   }
 
   function switchTab(name) {
     els('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     els('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
     if (name === 'materials') renderMaterials();
+    if (name === 'packs') renderPackManager();
   }
 
   /* ---------- BUILDER ---------- */
   function initBuilderView() {
     state.builder = new MCBuilder(el('#builder-canvas'), state.registry);
 
+    renderCategorySelect('#palette-category', 'block');
     renderPalette('');
     el('#palette-search').addEventListener('input', (e) => renderPalette(e.target.value));
+    el('#palette-category').addEventListener('change', () => renderPalette(el('#palette-search').value));
 
     els('.tool').forEach(b => b.addEventListener('click', () => {
       els('.tool').forEach(x => x.classList.toggle('active', x === b));
@@ -181,11 +222,15 @@
 
   function renderPalette(query) {
     const grid = el('#palette-grid');
-    const entries = state.registry.allEntries({ kind: 'block', query });
+    const entries = state.registry.allEntries({
+      kind: 'block',
+      category: el('#palette-category').value || null,
+      query,
+    });
     const cap = 500;
     const shown = entries.slice(0, cap);
     grid.innerHTML = shown.map(e => `
-      <div class="palette-cell ${e.texture ? '' : 'no-tex'}" data-id="${e.id}" title="${e.displayName} (${e.id})">
+      <div class="palette-cell ${e.texture ? '' : 'no-tex'}" data-id="${e.id}" title="${e.displayName} (${e.id}) - ${e.categoryLabel}">
         ${e.texture ? `<img src="${e.texture}" alt="">` : `${e.name}`}
       </div>
     `).join('') + (entries.length > cap
@@ -212,6 +257,7 @@
       <div class="info">
         <span class="name">${escapeHtml(entry.displayName)}</span>
         <span class="id">${entry.id}</span>
+        <span class="id">${entry.categoryLabel || 'Misc'}${entry.renderHint ? ` - ${entry.renderHint.shape}` : ''}</span>
       </div>`;
   }
 
@@ -466,6 +512,97 @@
   function initMaterialsView() {
     el('#mat-refresh').addEventListener('click', renderMaterials);
     el('#mat-break-raw').addEventListener('change', renderMaterials);
+  }
+
+  /* ---------- PACK MANAGER ---------- */
+  function initPackManagerView() {
+    el('#pack-add-jar').addEventListener('click', () => el('#pack-add-file').click());
+    el('#pack-add-file').addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (f) await handleJar(f, { additive: true });
+      e.target.value = '';
+    });
+    renderPackManager();
+  }
+
+  function renderPackManager() {
+    renderPackList();
+    renderCategoryList();
+  }
+
+  function renderPackList() {
+    const root = el('#pack-list');
+    if (!root) return;
+    const packs = state.registry.packSummaries || [];
+    if (!packs.length) {
+      root.innerHTML = '<p class="muted">No packs loaded.</p>';
+      return;
+    }
+    root.innerHTML = packs.map((p, i) => `
+      <div class="pack-card">
+        <div class="pack-title">
+          <strong>${escapeHtml(p.name)}</strong>
+          <span>${i === 0 ? 'base' : escapeHtml(p.type)}</span>
+        </div>
+        <div class="pack-stats">
+          <span>${p.blocks.toLocaleString()} blocks</span>
+          <span>${p.items.toLocaleString()} items</span>
+          <span>${p.recipes.toLocaleString()} recipes</span>
+          <span>${p.textures.toLocaleString()} textures</span>
+        </div>
+        <div class="pack-ns">${p.namespaces.map(escapeHtml).join(', ') || 'no namespaces'}</div>
+        ${p.mods && p.mods.length
+          ? `<div class="pack-mods">${p.mods.map(m => escapeHtml(m.name || m.id || 'mod')).join(', ')}</div>`
+          : ''}
+      </div>
+    `).join('');
+  }
+
+  function renderCategoryList() {
+    const root = el('#category-list');
+    if (!root) return;
+    const entries = state.registry.allEntries({ kind: 'all' });
+    const counts = new Map();
+    for (const entry of entries) counts.set(entry.category, (counts.get(entry.category) || 0) + 1);
+    root.innerHTML = state.registry.categoryDefs().map(cat => `
+      <div class="category-row">
+        <span>${escapeHtml(cat.label)}</span>
+        <strong>${(counts.get(cat.id) || 0).toLocaleString()}</strong>
+      </div>
+    `).join('');
+  }
+
+  function renderCategorySelect(sel, kind) {
+    const node = el(sel);
+    if (!node) return;
+    const prev = node.value;
+    const opts = ['<option value="">All categories</option>'];
+    for (const cat of state.registry.categoriesFor(kind)) {
+      opts.push(`<option value="${cat.id}">${cat.label}</option>`);
+    }
+    node.innerHTML = opts.join('');
+    if (prev && Array.from(node.options).some(o => o.value === prev)) node.value = prev;
+  }
+
+  function updatePackMeta() {
+    const base = state.pack;
+    const count = state.registry.packSummaries.length;
+    const version = base && base.mcVersion ? `MC ${base.mcVersion}` : 'MC version unknown';
+    const packFormat = base && base.packFormat ? ` (pack ${base.packFormat})` : '';
+    el('#pack-version').textContent = `${version}${packFormat}${count > 1 ? ` - ${count} packs` : ''}`;
+  }
+
+  function refreshRegistryViews() {
+    updatePackMeta();
+    renderCategorySelect('#palette-category', 'block');
+    if (state.builder) renderPalette(el('#palette-search').value || '');
+    if (state.browserView) {
+      state.browserView.refreshNamespaces();
+      state.browserView.render();
+    }
+    renderRecipeResults(el('#recipe-search') ? el('#recipe-search').value : '');
+    if (state.currentRecipeId) renderRecipeDetail(state.currentRecipeId);
+    renderPackManager();
   }
 
   function renderMaterials() {
