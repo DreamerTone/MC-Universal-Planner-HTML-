@@ -215,7 +215,7 @@
       category: state.category,
     });
     $('#creative-meta').textContent = `${entries.length.toLocaleString()} blocks`;
-    $('#creative-grid').innerHTML = entries.slice(0, 700).map(blockCard).join('');
+    $('#creative-grid').innerHTML = entries.map(blockCard).join('');
     bindBlockCards($('#creative-grid'));
   }
 
@@ -697,7 +697,7 @@
     }
 
     if (entry.behavior?.pointedDripstone) {
-      const stackBase = pointedDripstoneInColumn(entry.id, cell);
+      const stackBase = pointedDripstoneStackTarget(entry.id, cell, normal);
       if (stackBase) {
         const dir = stackBase.record.state?.vertical_direction === 'down' ? 'down' : 'up';
         const grow = dripstoneGrowDelta(dir);
@@ -1465,6 +1465,29 @@
       const next = { x: cell.x, y, z: cell.z };
       const record = world.cells.get(cellKey(next));
       if (record?.id === id) return { cell: next, record };
+    }
+    return null;
+  }
+
+  function pointedDripstoneStackTarget(id, cell, normal) {
+    const direct = pointedDripstoneInColumn(id, cell);
+    if (direct) return direct;
+    if (!normal || cell.y !== 0) return null;
+
+    // Pointed dripstone is very narrow, so repeat-clicking its visible tip can
+    // raycast onto a neighboring ground cell. Grow the nearest existing column
+    // instead of forcing pixel-perfect clicks on the tiny model.
+    const offsets = [];
+    for (let r = 1; r <= 2; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) === r) offsets.push({ x: dx, z: dz });
+        }
+      }
+    }
+    for (const offset of offsets) {
+      const found = pointedDripstoneInColumn(id, { x: cell.x + offset.x, y: cell.y, z: cell.z + offset.z });
+      if (found) return found;
     }
     return null;
   }
