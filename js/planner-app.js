@@ -1,5 +1,6 @@
 (function () {
   const { FACES, humanName } = MCModelTools;
+  const BASE_MESH_RAYCAST = THREE.Mesh.prototype.raycast;
 
   const state = {
     engine: new MCAssetEngine(),
@@ -1345,6 +1346,7 @@
       return url ? materialFor(url) : missingMaterial();
     });
     const mesh = new THREE.Mesh(geometryFromElement(element, faceNames), materials);
+    mesh.raycast = alphaAwareRaycast;
     if (element.rotation && typeof element.rotation.angle === 'number') {
       const pivot = new THREE.Group();
       const origin = element.rotation.origin || [8, 8, 8];
@@ -1364,6 +1366,34 @@
       return pivot;
     }
     return mesh;
+  }
+
+  function alphaAwareRaycast(raycaster, intersects) {
+    const start = intersects.length;
+    BASE_MESH_RAYCAST.call(this, raycaster, intersects);
+    for (let i = intersects.length - 1; i >= start; i--) {
+      if (!hitHasOpaqueTexel(intersects[i])) intersects.splice(i, 1);
+    }
+  }
+
+  function hitHasOpaqueTexel(hit) {
+    const mesh = hit.object;
+    const material = Array.isArray(mesh.material)
+      ? mesh.material[hit.face?.materialIndex || 0]
+      : mesh.material;
+    const map = material?.map;
+    const mask = map?.userData?.alphaMask;
+    if (!hit.uv || !mask?.hasTransparent) return true;
+
+    let u = hit.uv.x * map.repeat.x + map.offset.x;
+    let v = hit.uv.y * map.repeat.y + map.offset.y;
+    if (map.wrapS === THREE.RepeatWrapping) u = u - Math.floor(u);
+    if (map.wrapT === THREE.RepeatWrapping) v = v - Math.floor(v);
+    if (u < 0 || u > 1 || v < 0 || v > 1) return false;
+
+    const x = clamp(Math.floor(u * mask.width), 0, mask.width - 1);
+    const y = clamp(Math.floor(v * mask.height), 0, mask.height - 1);
+    return mask.alpha[y * mask.width + x] > 24;
   }
 
   function geometryFromElement(element, faceNames) {
@@ -1433,6 +1463,7 @@
     const animation = state.engine.textureMetaForUrl(url);
     const texture = new THREE.TextureLoader().load(url, () => {
       applyAnimatedTextureFrame(texture, animation);
+      texture.userData.alphaMask = alphaMaskFromImage(texture.image);
       needsRender = true;
       resolveLoad();
     }, undefined, () => resolveLoad());
@@ -1444,6 +1475,29 @@
     material.userData.textureUrl = url;
     textureCache.set(url, material);
     return material;
+  }
+
+  function alphaMaskFromImage(image) {
+    if (!image?.width || !image?.height || !document?.createElement) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = false;
+    try {
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      const alpha = new Uint8Array(canvas.width * canvas.height);
+      let hasTransparent = false;
+      for (let i = 0, j = 0; i < pixels.length; i += 4, j++) {
+        alpha[j] = pixels[i + 3];
+        if (alpha[j] <= 24) hasTransparent = true;
+      }
+      return { width: canvas.width, height: canvas.height, alpha, hasTransparent };
+    } catch (err) {
+      return null;
+    }
   }
 
   function applyAnimatedTextureFrame(texture, animation) {
