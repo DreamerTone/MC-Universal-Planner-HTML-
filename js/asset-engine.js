@@ -474,6 +474,7 @@
       railShape: shape === 'rail' && has('shape'),
       redstoneWire: shape === 'redstone_wire' && hasCardinals,
       multiFace: shape === 'multi_face',
+      countStackProperty: has('candles') ? 'candles' : (has('eggs') ? 'eggs' : (has('pickles') ? 'pickles' : null)),
       wallFan: shape === 'wall_fan' && has('facing'),
       floorFan: shape === 'floor_fan',
       pointedDripstone: shape === 'pointed_dripstone',
@@ -489,7 +490,7 @@
       sixWayFacing: has('facing') && (schema.facing || []).includes('up') && (schema.facing || []).includes('down'),
       rotationOnPlace: has('rotation'),
       floorOnly: ['rail', 'redstone_wire', 'pressure_plate', 'carpet', 'snow_layer', 'plant', 'redstone_component'].includes(shape)
-        || /candle|cake|composter|daylight_detector|tripwire|repeater|comparator/.test(name),
+        || /candle|cake|composter|daylight_detector|tripwire|repeater|comparator|turtle_egg|sea_pickle/.test(name),
       snowStackable: shape === 'snow_layer' && has('layers'),
       faceAttachment: has('face'),
       ladder: shape === 'ladder',

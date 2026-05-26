@@ -683,6 +683,30 @@
       }
     }
 
+    if (entry.behavior?.countStackProperty && hitCell) {
+      const target = world.cells.get(cellKey(hitCell));
+      if (target && target.id === entry.id) {
+        return stackCountedBlock(entry, target, hitCell);
+      }
+    }
+    if (entry.behavior?.countStackProperty) {
+      const target = world.cells.get(cellKey(cell));
+      if (target && target.id === entry.id) {
+        return stackCountedBlock(entry, target, cell);
+      }
+    }
+
+    if (entry.behavior?.pointedDripstone) {
+      const stackBase = pointedDripstoneInColumn(entry.id, cell);
+      if (stackBase) {
+        const dir = stackBase.record.state?.vertical_direction === 'down' ? 'down' : 'up';
+        const grow = dripstoneGrowDelta(dir);
+        hitCell = pointedDripstoneChainEnd(stackBase.cell, dir);
+        cell = addCell(hitCell, grow);
+        normal = new THREE.Vector3(grow.x, grow.y, grow.z);
+      }
+    }
+
     if (entry.behavior?.multiFace) {
       const face = multiFaceKeyForPlacement(entry, normal);
       if (!face) return rejectPlacement(`${entry.displayName} cannot attach to that face.`);
@@ -740,6 +764,19 @@
 
     setCell(cell, entry.id, placementState, { quiet: true });
     solveConnectionsNear(cell);
+    afterWorldChange();
+    return true;
+  }
+
+  function stackCountedBlock(entry, target, hitCell) {
+    const prop = entry.behavior?.countStackProperty;
+    const values = (entry.stateSchema?.[prop] || []).map(Number).filter(Number.isFinite);
+    const max = values.length ? Math.max(...values) : 4;
+    const current = Number(target.state?.[prop] || entry.defaultState?.[prop] || '1');
+    if (current >= max) return rejectPlacement(`${entry.displayName} is already at ${max}.`);
+    target.state = Object.assign({}, target.state, { [prop]: String(current + 1) });
+    rebuildCellObject(cellKey(hitCell), target);
+    solveConnectionsNear(hitCell);
     afterWorldChange();
     return true;
   }
@@ -1050,6 +1087,10 @@
       const key = cellKey(next);
       if (world.cells.has(key)) keys.add(key);
     }
+    for (let dy = -16; dy <= 16; dy++) {
+      const key = cellKey(addCell(cell, { x: 0, y: dy, z: 0 }));
+      if (world.cells.has(key)) keys.add(key);
+    }
 
     const dirty = new Set();
     for (let pass = 0; pass < 4; pass++) {
@@ -1081,6 +1122,9 @@
         }
         if (entry.behavior?.chestConnect) {
           merged = Object.assign({}, merged, { type: solveChestType(record, next) });
+        }
+        if (entry.behavior?.pointedDripstone) {
+          merged = Object.assign({}, merged, solvePointedDripstoneState(record, next));
         }
         if (sameState(merged, record.state)) continue;
         record.state = merged;
@@ -1387,6 +1431,57 @@
     if (same(facingDelta(ccw(facing)))) return 'right';
     if (same(facingDelta(cw(facing)))) return 'left';
     return values.includes('single') ? 'single' : (record.state?.type || values[0]);
+  }
+
+  function solvePointedDripstoneState(record, cell) {
+    const dir = record.state?.vertical_direction || 'up';
+    const tipDelta = dripstoneGrowDelta(dir);
+    const supportDelta = { x: -tipDelta.x, y: -tipDelta.y, z: -tipDelta.z };
+    const sameTip = samePointedDripstone(cell, tipDelta, dir);
+    const sameSupport = samePointedDripstone(cell, supportDelta, dir);
+    const oppositeAtTip = samePointedDripstone(cell, tipDelta, dir === 'up' ? 'down' : 'up');
+
+    let thickness = 'tip';
+    if (oppositeAtTip) thickness = 'tip_merge';
+    else if (sameTip && sameSupport) thickness = 'middle';
+    else if (sameTip && !sameSupport) thickness = 'base';
+
+    return { vertical_direction: dir, thickness };
+  }
+
+  function samePointedDripstone(cell, delta, verticalDirection) {
+    const record = world.cells.get(cellKey(addCell(cell, delta)));
+    if (!record) return false;
+    const entry = state.engine.blocks.get(record.id);
+    return !!entry?.behavior?.pointedDripstone
+      && (record.state?.vertical_direction || 'up') === verticalDirection;
+  }
+
+  function pointedDripstoneInColumn(id, cell) {
+    const direct = world.cells.get(cellKey(cell));
+    if (direct?.id === id) return { cell, record: direct };
+    if (direct) return null;
+    for (let y = 0; y < world.size.y; y++) {
+      const next = { x: cell.x, y, z: cell.z };
+      const record = world.cells.get(cellKey(next));
+      if (record?.id === id) return { cell: next, record };
+    }
+    return null;
+  }
+
+  function pointedDripstoneChainEnd(cell, dir) {
+    const grow = dripstoneGrowDelta(dir);
+    let end = cell;
+    for (let i = 0; i < world.size.y; i++) {
+      const next = addCell(end, grow);
+      if (!samePointedDripstone(end, grow, dir)) return end;
+      end = next;
+    }
+    return end;
+  }
+
+  function dripstoneGrowDelta(dir) {
+    return dir === 'down' ? { x: 0, y: -1, z: 0 } : { x: 0, y: 1, z: 0 };
   }
 
   function isSolidCell(cell) {
