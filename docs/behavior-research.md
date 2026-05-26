@@ -53,10 +53,13 @@ Use a hybrid behavior engine:
    stairs, logs, mineable materials, replaceable plants, and support rules.
 4. **Vanilla behavior profiles**: Add small functions for known behavior families
    instead of hardcoding every block id individually.
-5. **Debug Stick mode**: Let the user click a placed block and cycle real state
+5. **Connection solver**: Place blocks into the world first, then solve nearby
+   connector states from the final neighbor graph. This matches Minecraft's
+   neighbor-update feel better than guessing connector states before placement.
+6. **Debug Stick mode**: Let the user click a placed block and cycle real state
    values. This covers rare cases and modded blocks even when automatic behavior
    is incomplete.
-6. **Mod fallback**: If a modded block has familiar state names, apply matching
+7. **Mod fallback**: If a modded block has familiar state names, apply matching
    vanilla profiles. If it has unknown state names, render it correctly and let
    Debug Stick/manual state editing handle the rest.
 

@@ -64,4 +64,6 @@ shape classification for the selected block.
 The block behavior plan is tracked in `docs/behavior-research.md`. The short
 version: render from jar assets, infer common behavior from blockstate schemas
 and tags, and implement vanilla behavior families instead of hardcoding every
-block id one by one.
+block id one by one. Connector blocks are solved after placement from the final
+neighbor graph, then rebuilt with the state values their blockstate schema
+expects.

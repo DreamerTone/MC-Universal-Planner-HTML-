@@ -371,20 +371,29 @@
     const entry = state.engine.blocks.get(state.selectedId);
     if (!entry || !inside(cell)) return;
     const placementState = placementStateFor(entry, cell, normal);
-    setCell(cell, entry.id, placementState);
-    refreshAround(cell);
+    setCell(cell, entry.id, placementState, { quiet: true });
+    solveConnectionsNear(cell);
+    afterWorldChange();
   }
 
-  function setCell(cell, id, blockState) {
+  function setCell(cell, id, blockState, opts = {}) {
     const key = cellKey(cell);
     const old = world.cells.get(key);
     if (old) blockRoot.remove(old.object);
-    const object = objectFor(id, blockState);
+    const record = { id, state: blockState, object: null };
+    world.cells.set(key, record);
+    rebuildCellObject(key, record);
+    if (!opts.quiet) afterWorldChange();
+  }
+
+  function rebuildCellObject(key, record) {
+    if (record.object) blockRoot.remove(record.object);
+    const cell = parseCell(key);
+    const object = objectFor(record.id, record.state);
     object.position.set(cell.x - world.size.x / 2 + 0.5, cell.y + 0.5, cell.z - world.size.z / 2 + 0.5);
     object.traverse(child => { child.userData.cellKey = key; });
     blockRoot.add(object);
-    world.cells.set(key, { id, state: blockState, object });
-    afterWorldChange();
+    record.object = object;
   }
 
   function eraseCell(cell) {
@@ -394,7 +403,7 @@
     if (!old) return;
     blockRoot.remove(old.object);
     world.cells.delete(key);
-    refreshAround(cell);
+    solveConnectionsNear(cell);
     afterWorldChange();
   }
 
@@ -404,15 +413,35 @@
     afterWorldChange();
   }
 
-  function refreshAround(cell) {
-    const queue = [cell, addCell(cell, { x: 1, y: 0, z: 0 }), addCell(cell, { x: -1, y: 0, z: 0 }), addCell(cell, { x: 0, y: 0, z: 1 }), addCell(cell, { x: 0, y: 0, z: -1 })];
-    for (const next of queue) {
-      const record = world.cells.get(cellKey(next));
+  function solveConnectionsNear(cell) {
+    const keys = new Set();
+    for (const next of cardinalNeighborhood(cell)) {
+      const key = cellKey(next);
+      if (world.cells.has(key)) keys.add(key);
+    }
+
+    const dirty = new Set();
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (const key of keys) {
+        const next = parseCell(key);
+        const record = world.cells.get(key);
+        if (!record) continue;
+        const entry = state.engine.blocks.get(record.id);
+        if (!hasConnectorState(entry)) continue;
+        const merged = Object.assign({}, record.state, connectorState(record.id, next));
+        if (sameState(merged, record.state)) continue;
+        record.state = merged;
+        dirty.add(key);
+        changed = true;
+      }
+      if (!changed) break;
+    }
+
+    for (const key of dirty) {
+      const record = world.cells.get(key);
       if (!record) continue;
-      const entry = state.engine.blocks.get(record.id);
-      if (!hasConnectorState(entry)) continue;
-      const merged = Object.assign({}, record.state, connectorState(record.id, next));
-      if (JSON.stringify(merged) !== JSON.stringify(record.state)) setCell(next, record.id, merged);
+      rebuildCellObject(key, record);
     }
   }
 
@@ -430,7 +459,6 @@
       else out.facing = facingFromCamera();
     }
     if (entry.behavior?.halfOnPlace) out.half = normal.y < 0 ? 'top' : 'bottom';
-    if (hasConnectorState(entry)) Object.assign(out, connectorState(entry.id, cell));
     return out;
   }
 
@@ -456,7 +484,10 @@
   }
 
   function connectorValue(entry, connected) {
-    if (entry?.behavior?.connector === 'wall') return connected ? 'low' : 'none';
+    const values = entry?.stateSchema?.north || [];
+    if (values.includes('low') || values.includes('tall') || values.includes('none')) {
+      return connected ? 'low' : 'none';
+    }
     return connected ? 'true' : 'false';
   }
 
@@ -482,7 +513,7 @@
       const group = new THREE.Group();
       for (const element of part.elements) group.add(meshFromElement(element, part, id));
       group.rotation.order = 'YXZ';
-      group.rotation.y = THREE.MathUtils.degToRad(part.y || 0);
+      group.rotation.y = THREE.MathUtils.degToRad(-(part.y || 0));
       group.rotation.x = THREE.MathUtils.degToRad(part.x || 0);
       root.add(group);
     }
@@ -577,6 +608,7 @@
   function materialFor(url) {
     if (textureCache.has(url)) return textureCache.get(url);
     const texture = new THREE.TextureLoader().load(url, () => { needsRender = true; });
+    texture.flipY = false;
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -649,6 +681,20 @@
 
   function addCell(cell, delta) {
     return { x: cell.x + delta.x, y: cell.y + delta.y, z: cell.z + delta.z };
+  }
+
+  function cardinalNeighborhood(cell) {
+    return [
+      cell,
+      addCell(cell, { x: 1, y: 0, z: 0 }),
+      addCell(cell, { x: -1, y: 0, z: 0 }),
+      addCell(cell, { x: 0, y: 0, z: 1 }),
+      addCell(cell, { x: 0, y: 0, z: -1 }),
+    ];
+  }
+
+  function sameState(a, b) {
+    return JSON.stringify(a || {}) === JSON.stringify(b || {});
   }
 
   function clamp(value, min, max) {
