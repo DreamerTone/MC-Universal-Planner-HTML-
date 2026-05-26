@@ -330,14 +330,33 @@
     if (keys.has('axis')) out.axis = 'y';
     if (keys.has('facing')) out.facing = 'north';
     if (keys.has('rotation')) out.rotation = '0';
-    if (keys.has('half')) out.half = 'bottom';
+    if (keys.has('half')) out.half = (/door/.test(name) && !/trapdoor/.test(name)) ? 'lower' : 'bottom';
     if (keys.has('shape')) out.shape = 'straight';
     if (keys.has('hanging')) out.hanging = 'false';
+    if (keys.has('type')) out.type = /slab/.test(name) ? 'bottom' : (schema.type?.[0] || 'bottom');
+    if (keys.has('part')) out.part = 'foot';
+    if (keys.has('hinge')) out.hinge = 'left';
+    if (keys.has('open')) out.open = 'false';
+    if (keys.has('powered')) out.powered = 'false';
+    if (keys.has('layers')) out.layers = '1';
+    if (keys.has('face')) out.face = 'wall';
+    if (keys.has('waterlogged')) out.waterlogged = 'false';
+    if (keys.has('lit')) out.lit = 'true';
+    if (keys.has('occupied')) out.occupied = 'false';
+    if (keys.has('in_wall')) out.in_wall = 'false';
     for (const side of ['north', 'east', 'south', 'west', 'up', 'down']) {
-      if (keys.has(side)) out[side] = 'false';
+      if (keys.has(side)) {
+        const values = schema[side] || [];
+        out[side] = values.includes('none') ? 'none' : 'false';
+      }
     }
     if (/fence|pane|wall|bars/.test(name)) {
-      Object.assign(out, { north: 'false', east: 'false', south: 'false', west: 'false' });
+      for (const side of ['north', 'east', 'south', 'west']) {
+        if (keys.has(side)) {
+          const values = schema[side] || [];
+          out[side] = values.includes('none') ? 'none' : 'false';
+        }
+      }
     }
     return out;
   }
@@ -346,33 +365,60 @@
     const elements = parts.flatMap(part => part.elements || []);
     if (isFullCube(elements)) return 'full cube';
     if (/stairs/.test(name)) return 'stairs';
+    if (/slab/.test(name)) return 'slab';
+    if (/trapdoor/.test(name)) return 'trapdoor';
     if (/fence_gate/.test(name)) return 'fence gate';
     if (/fence/.test(name)) return 'fence';
-    if (/wall/.test(name)) return 'wall';
+    if (/_wall$|^wall$/.test(name)) return 'wall';
     if (/pane|bars/.test(name)) return 'pane';
-    if (/door/.test(name)) return 'door';
+    if (/_door$/.test(name)) return 'door';
+    if (/_bed$|^bed$/.test(name)) return 'bed';
+    if (/^carpet$|_carpet$|moss_carpet/.test(name)) return 'carpet';
+    if (/_button$/.test(name)) return 'button';
+    if (/lever/.test(name)) return 'lever';
+    if (/pressure_plate/.test(name)) return 'pressure_plate';
+    if (/wall_torch|soul_wall_torch|redstone_wall_torch/.test(name)) return 'wall_torch';
+    if (/torch/.test(name)) return 'torch';
+    if (/wall_sign|wall_hanging_sign/.test(name)) return 'wall_sign';
     if (/sign/.test(name)) return 'sign';
     if (/lantern/.test(name)) return 'lantern';
+    if (/^snow$|snow_layer/.test(name)) return 'snow_layer';
+    if (/ladder/.test(name)) return 'ladder';
     if (/sapling|flower|mushroom|roots|grass|fern|crop/.test(name)) return 'plant';
     return elements.length ? 'custom' : 'unknown';
   }
 
   function inferBehavior(name, schema, shape) {
-    const hasCardinals = ['north', 'east', 'south', 'west'].every(key => key in schema);
-    const connector = (() => {
-      if (!hasCardinals) return null;
-      if (shape === 'wall') return 'wall';
-      if (shape === 'pane') return 'pane';
-      if (shape === 'fence') return 'fence';
-      return null;
-    })();
+    const has = (k) => k in schema;
+    const hasCardinals = ['north', 'east', 'south', 'west'].every(has);
+    let connector = null;
+    if (shape === 'wall') connector = 'wall';
+    else if (shape === 'pane') connector = 'pane';
+    else if (shape === 'fence') connector = 'fence';
     return {
-      axisOnPlace: 'axis' in schema,
-      horizontalFacingOnPlace: 'facing' in schema,
-      halfOnPlace: 'half' in schema,
+      axisOnPlace: has('axis'),
+      horizontalFacingOnPlace: has('facing'),
+      halfOnPlace: has('half'),
+      hasCardinals,
       connector,
       fenceGate: shape === 'fence gate',
       solidConnectorTarget: shape === 'full cube',
+      stairShape: shape === 'stairs' && has('shape'),
+      slabMergeable: shape === 'slab' && has('type'),
+      wallConnector: shape === 'wall',
+      paneConnector: shape === 'pane',
+      lanternHangable: shape === 'lantern' && has('hanging'),
+      trapdoorPlacement: shape === 'trapdoor' && has('half') && has('facing'),
+      doorTwoBlock: shape === 'door' && has('half') && has('hinge'),
+      bedTwoBlock: shape === 'bed' && has('part'),
+      snowStackable: shape === 'snow_layer' && has('layers'),
+      faceAttachment: has('face'),
+      ladder: shape === 'ladder',
+      wallTorch: shape === 'wall_torch',
+      wallSign: shape === 'wall_sign',
+      torch: shape === 'torch',
+      sign: shape === 'sign',
+      shape,
     };
   }
 

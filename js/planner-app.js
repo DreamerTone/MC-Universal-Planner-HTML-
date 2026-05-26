@@ -522,14 +522,19 @@
     if (!drag || drag.moved) return;
     const hit = pick(e);
     if (!hit) return;
-    const erase = e.shiftKey || e.button === 2 || state.tool === 'erase';
     if (state.tool === 'pick') {
       const key = hit.cellKey;
       if (key && world.cells.has(key)) selectBlock(world.cells.get(key).id);
       return;
     }
+    const isRight = e.button === 2;
+    if (state.debugMode && isRight && hit.cellKey) {
+      cycleStateAt(hit.cell);
+      return;
+    }
+    const erase = e.shiftKey || isRight || state.tool === 'erase';
     if (erase) eraseCell(hit.cell);
-    else placeAt(hit.placeCell, hit.normal);
+    else placeAt(hit.placeCell, hit.normal, hit.cell);
   }
 
   function updateCursor(e) {
@@ -562,26 +567,119 @@
     };
   }
 
-  function placeAt(cell, normal) {
-    const entry = state.engine.blocks.get(state.selectedId);
+  function placeAt(cell, normal, hitCell) {
+    placeBlockId(state.selectedId, cell, normal, hitCell);
+  }
+
+  function placeBlockId(blockId, cell, normal, hitCell) {
+    if (!blockId) return;
+    const resolved = resolvePlacementBlock(blockId, normal);
+    const entry = state.engine.blocks.get(resolved);
     if (!entry || !inside(cell)) return;
+
+    // Slab merge: clicking on a same-material slab promotes it to double.
+    if (entry.behavior?.slabMergeable && hitCell) {
+      const target = world.cells.get(cellKey(hitCell));
+      if (target && target.id === entry.id && target.state?.type !== 'double') {
+        target.state = Object.assign({}, target.state, { type: 'double' });
+        rebuildCellObject(cellKey(hitCell), target);
+        afterWorldChange();
+        return;
+      }
+    }
+
+    // Snow layer stacking: clicking on top of same snow adds a layer.
+    if (entry.behavior?.snowStackable && hitCell) {
+      const target = world.cells.get(cellKey(hitCell));
+      if (target && target.id === entry.id) {
+        const n = Math.min(8, Number(target.state?.layers || '1') + 1);
+        if (n >= 8) {
+          // Promote to full snow block if registry has one; otherwise cap at 8 layers.
+          const snowFull = state.engine.blocks.get(entry.ns + ':snow_block');
+          if (snowFull) {
+            target.id = snowFull.id;
+            target.state = snowFull.defaultState || {};
+          } else {
+            target.state = Object.assign({}, target.state, { layers: '8' });
+          }
+        } else {
+          target.state = Object.assign({}, target.state, { layers: String(n) });
+        }
+        rebuildCellObject(cellKey(hitCell), target);
+        afterWorldChange();
+        return;
+      }
+    }
+
     const placementState = placementStateFor(entry, cell, normal);
+
+    // Door: place lower at cell, upper at cell+(0,1,0).
+    if (entry.behavior?.doorTwoBlock) {
+      const upperCell = addCell(cell, { x: 0, y: 1, z: 0 });
+      if (!inside(upperCell)) return;
+      const lowerState = Object.assign({}, placementState, { half: 'lower' });
+      const upperState = Object.assign({}, placementState, { half: 'upper' });
+      setCell(cell, entry.id, lowerState, { quiet: true });
+      setCell(upperCell, entry.id, upperState, { quiet: true });
+      solveConnectionsNear(cell);
+      afterWorldChange();
+      return;
+    }
+
+    // Bed: place foot at cell, head at cell+facing.
+    if (entry.behavior?.bedTwoBlock) {
+      const headDelta = facingDelta(placementState.facing || 'north');
+      const headCell = addCell(cell, headDelta);
+      if (!inside(headCell)) return;
+      if (world.cells.has(cellKey(headCell))) return;
+      setCell(cell, entry.id, Object.assign({}, placementState, { part: 'foot' }), { quiet: true });
+      setCell(headCell, entry.id, Object.assign({}, placementState, { part: 'head' }), { quiet: true });
+      afterWorldChange();
+      return;
+    }
+
     setCell(cell, entry.id, placementState, { quiet: true });
     solveConnectionsNear(cell);
     afterWorldChange();
   }
 
-  // Test-only hook for the Playwright harness; harmless in production.
+  // Choose the right block id for the clicked face. Vanilla treats wall
+  // torches/signs as distinct blocks, so picking 'torch' and clicking a
+  // side should place wall_torch facing away from that wall.
+  function resolvePlacementBlock(blockId, normal) {
+    const entry = state.engine.blocks.get(blockId);
+    if (!entry || !normal) return blockId;
+    const sideClick = Math.abs(normal.x) + Math.abs(normal.z) > 0.5;
+    if (!sideClick) return blockId;
+    const tryNames = [];
+    if (entry.behavior?.torch && !entry.behavior?.wallTorch) {
+      tryNames.push(entry.name.replace(/torch$/, 'wall_torch'));
+    }
+    if (entry.behavior?.sign && !entry.behavior?.wallSign) {
+      tryNames.push(entry.name.replace(/hanging_sign$/, 'wall_hanging_sign'));
+      tryNames.push(entry.name.replace(/sign$/, 'wall_sign'));
+    }
+    for (const name of tryNames) {
+      const w = state.engine.blocks.get(`${entry.ns}:${name}`);
+      if (w) return w.id;
+    }
+    return blockId;
+  }
+
+  // Test hook for the Playwright harness; harmless in production.
   window.__plannerTest = {
-    placeBlock(cell, id, normal) {
-      const entry = state.engine.blocks.get(id);
-      if (!entry || !inside(cell)) return;
-      const n = normal ? new THREE.Vector3(normal.x || 0, normal.y || 1, normal.z || 0) : new THREE.Vector3(0, 1, 0);
-      const placementState = placementStateFor(entry, cell, n);
-      setCell(cell, id, placementState, { quiet: true });
-      solveConnectionsNear(cell);
+    placeBlock(cell, id, normal, hitCell) {
+      const n = normal ? new THREE.Vector3(normal.x || 0, normal.y || 0, normal.z || 0) : new THREE.Vector3(0, 1, 0);
+      placeBlockId(id, cell, n, hitCell);
+    },
+    setState(cell, partial) {
+      const record = world.cells.get(cellKey(cell));
+      if (!record) return;
+      record.state = Object.assign({}, record.state, partial);
+      rebuildCellObject(cellKey(cell), record);
       afterWorldChange();
     },
+    world,
   };
 
   function setCell(cell, id, blockState, opts = {}) {
@@ -609,9 +707,63 @@
     const key = cellKey(cell);
     const old = world.cells.get(key);
     if (!old) return;
+    const entry = state.engine.blocks.get(old.id);
+
+    // Doors + beds are two-cell structures. Remove the linked half too so we
+    // never leave a phantom half-door behind.
+    const linked = linkedCell(old, cell, entry);
+
     blockRoot.remove(old.object);
     world.cells.delete(key);
+    if (linked) {
+      const linkedKey = cellKey(linked);
+      const other = world.cells.get(linkedKey);
+      if (other && other.id === old.id) {
+        blockRoot.remove(other.object);
+        world.cells.delete(linkedKey);
+      }
+    }
     solveConnectionsNear(cell);
+    if (linked) solveConnectionsNear(linked);
+    afterWorldChange();
+  }
+
+  function linkedCell(record, cell, entry) {
+    if (!record || !entry) return null;
+    if (entry.behavior?.doorTwoBlock) {
+      const half = record.state?.half || 'lower';
+      return half === 'lower' ? addCell(cell, { x: 0, y: 1, z: 0 }) : addCell(cell, { x: 0, y: -1, z: 0 });
+    }
+    if (entry.behavior?.bedTwoBlock) {
+      const part = record.state?.part || 'foot';
+      const facing = record.state?.facing || 'north';
+      const d = facingDelta(facing);
+      return part === 'foot' ? addCell(cell, d) : addCell(cell, { x: -d.x, y: 0, z: -d.z });
+    }
+    return null;
+  }
+
+  // Cycle the most useful state property for the block under the cursor,
+  // Minecraft Debug Stick style. Only enabled while debug mode is on.
+  function cycleStateAt(cell) {
+    const key = cellKey(cell);
+    const record = world.cells.get(key);
+    if (!record) return;
+    const entry = state.engine.blocks.get(record.id);
+    if (!entry || !entry.stateSchema) return;
+    const keys = Object.keys(entry.stateSchema);
+    if (!keys.length) return;
+    const priority = ['facing', 'shape', 'half', 'type', 'axis', 'hanging', 'open', 'powered', 'face', 'hinge', 'layers', 'rotation'];
+    const pick = priority.find(k => keys.includes(k)) || keys[0];
+    const values = entry.stateSchema[pick] || [];
+    if (!values.length) return;
+    const current = String(record.state?.[pick] ?? values[0]);
+    const idx = values.indexOf(current);
+    const next = values[(idx + 1) % values.length];
+    record.state = Object.assign({}, record.state, { [pick]: next });
+    rebuildCellObject(key, record);
+    solveConnectionsNear(cell);
+    toast(`${entry.id} ${pick} = ${next}`);
     afterWorldChange();
   }
 
@@ -623,21 +775,27 @@
 
   function solveConnectionsNear(cell) {
     const keys = new Set();
-    for (const next of cardinalNeighborhood(cell)) {
+    for (const next of neighborhood(cell)) {
       const key = cellKey(next);
       if (world.cells.has(key)) keys.add(key);
     }
 
     const dirty = new Set();
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < 4; pass++) {
       let changed = false;
       for (const key of keys) {
         const next = parseCell(key);
         const record = world.cells.get(key);
         if (!record) continue;
         const entry = state.engine.blocks.get(record.id);
-        if (!hasConnectorState(entry)) continue;
-        const merged = Object.assign({}, record.state, connectorState(record.id, next));
+        if (!entry) continue;
+        let merged = record.state;
+        if (hasConnectorState(entry)) {
+          merged = Object.assign({}, merged, connectorState(record.id, next));
+        }
+        if (entry.behavior?.stairShape) {
+          merged = Object.assign({}, merged, { shape: solveStairShape(record, next) });
+        }
         if (sameState(merged, record.state)) continue;
         record.state = merged;
         dirty.add(key);
@@ -660,30 +818,95 @@
 
   function placementStateFor(entry, cell, normal) {
     const out = Object.assign({}, entry.defaultState || {});
-    if (entry.behavior?.axisOnPlace) out.axis = Math.abs(normal.x) ? 'x' : (Math.abs(normal.z) ? 'z' : 'y');
-    if (entry.behavior?.horizontalFacingOnPlace) {
-      if (Math.abs(normal.x)) out.facing = normal.x > 0 ? 'east' : 'west';
-      else if (Math.abs(normal.z)) out.facing = normal.z > 0 ? 'south' : 'north';
-      else out.facing = facingFromCamera();
+    const b = entry.behavior || {};
+    const sideClick = Math.abs(normal.x) + Math.abs(normal.z) > 0.5;
+    const ceilingClick = normal.y < -0.5; // clicked the bottom face of a block above
+    const floorClick = normal.y > 0.5;
+
+    if (b.axisOnPlace) out.axis = Math.abs(normal.x) ? 'x' : (Math.abs(normal.z) ? 'z' : 'y');
+
+    if (b.horizontalFacingOnPlace || b.shape === 'stairs' || b.shape === 'door' || b.shape === 'bed' || b.shape === 'fence gate' || b.shape === 'trapdoor') {
+      // Player-relative blocks: face the player (opposite of camera yaw).
+      out.facing = facingFromCamera();
     }
-    if (entry.behavior?.halfOnPlace) out.half = normal.y < 0 ? 'top' : 'bottom';
+
+    if (b.shape === 'stairs') {
+      out.half = ceilingClick ? 'top' : 'bottom';
+      out.shape = 'straight';
+    } else if (b.shape === 'slab') {
+      // Slab: top half if you clicked the bottom face of a block above, OR
+      // if you hit the upper half of the block face. Without sub-cell
+      // precision we approximate using the surface normal.
+      out.type = ceilingClick ? 'top' : 'bottom';
+    } else if (b.trapdoorPlacement) {
+      // Trapdoor attaches to the face you clicked. Half = the side of that face.
+      if (sideClick) {
+        out.half = 'bottom';
+        out.facing = normal.x > 0 ? 'west' : normal.x < 0 ? 'east' : normal.z > 0 ? 'north' : 'south';
+      } else {
+        out.half = ceilingClick ? 'top' : 'bottom';
+      }
+      out.open = 'false';
+    } else if (b.halfOnPlace) {
+      out.half = ceilingClick ? 'top' : 'bottom';
+    }
+
+    if (b.lanternHangable) {
+      out.hanging = ceilingClick ? 'true' : 'false';
+    }
+
+    if (b.faceAttachment) {
+      // Buttons/levers: face=floor/wall/ceiling derived from clicked surface.
+      if (floorClick) {
+        out.face = 'floor';
+        out.facing = facingFromCamera();
+      } else if (ceilingClick) {
+        out.face = 'ceiling';
+        out.facing = facingFromCamera();
+      } else if (sideClick) {
+        out.face = 'wall';
+        // facing points OUT from the wall (away from the supporting block).
+        out.facing = normal.x > 0 ? 'east' : normal.x < 0 ? 'west' : normal.z > 0 ? 'south' : 'north';
+      }
+    }
+
+    if (b.wallTorch || b.wallSign || b.ladder) {
+      // Wall-mounted blocks: face the open space (same as the normal direction).
+      if (sideClick) {
+        out.facing = normal.x > 0 ? 'east' : normal.x < 0 ? 'west' : normal.z > 0 ? 'south' : 'north';
+      }
+    }
+
+    if (b.snowStackable && !out.layers) out.layers = '1';
+
     return out;
+  }
+
+  function facingDelta(facing) {
+    return {
+      north: { x: 0, y: 0, z: -1 },
+      south: { x: 0, y: 0, z: 1 },
+      east:  { x: 1, y: 0, z: 0 },
+      west:  { x: -1, y: 0, z: 0 },
+    }[facing] || { x: 0, y: 0, z: 0 };
   }
 
   function connectorState(id, cell) {
     const entry = state.engine.blocks.get(id);
-    const checks = {
-      north: { x: 0, y: 0, z: -1 },
-      east: { x: 1, y: 0, z: 0 },
-      south: { x: 0, y: 0, z: 1 },
-      west: { x: -1, y: 0, z: 0 },
-    };
     const out = {};
-    for (const [side, delta] of Object.entries(checks)) {
+    const sides = {
+      north: { x: 0, y: 0, z: -1 },
+      east:  { x: 1, y: 0, z: 0 },
+      south: { x: 0, y: 0, z: 1 },
+      west:  { x: -1, y: 0, z: 0 },
+    };
+    for (const [side, delta] of Object.entries(sides)) {
       const other = world.cells.get(cellKey(addCell(cell, delta)));
       out[side] = connectorValue(entry, !!other && canConnect(entry, other, side));
     }
-    if (entry?.behavior?.connector === 'wall' && 'up' in (entry.stateSchema || {})) out.up = 'true';
+    if (entry?.behavior?.connector === 'wall' && 'up' in (entry.stateSchema || {})) {
+      out.up = wallUpValue(out) ? 'true' : 'false';
+    }
     return out;
   }
 
@@ -699,19 +922,95 @@
     return connected ? 'true' : 'false';
   }
 
+  function wallUpValue(sides) {
+    // Vanilla wall.up is true unless connections form exactly a straight line
+    // (north+south alone, or east+west alone). With 0/1/3/4 connections it
+    // shows the post.
+    const connected = (s) => s !== 'none' && s !== 'false';
+    const n = connected(sides.north), s = connected(sides.south);
+    const e = connected(sides.east), w = connected(sides.west);
+    const count = [n, s, e, w].filter(Boolean).length;
+    if (count === 2 && ((n && s && !e && !w) || (e && w && !n && !s))) return false;
+    return true;
+  }
+
   function canConnect(entry, otherRecord, side) {
     const other = state.engine.blocks.get(otherRecord.id);
     if (!entry || !other) return false;
+    // Solid full cubes are universal connection targets.
     if (other.behavior?.solidConnectorTarget || other.fullCube) return true;
-    if (entry.behavior?.connector === 'fence' && other.behavior?.fenceGate) {
+
+    const me = entry.behavior?.connector;
+    const them = other.behavior?.connector;
+
+    // Perpendicular fence gate: fences and walls visually connect to gates
+    // whose facing axis is perpendicular to the connection side.
+    if ((me === 'fence' || me === 'wall') && other.behavior?.fenceGate) {
       const facing = otherRecord.state?.facing || other.defaultState?.facing || 'north';
       return axisForSide(side) !== axisForSide(facing);
     }
-    return entry.behavior?.connector && entry.behavior.connector === other.behavior?.connector;
+
+    // Like-to-like: fence/fence, wall/wall, pane/pane.
+    if (me && them && me === them) {
+      // Different fence materials still connect to each other in vanilla
+      // (e.g. oak fence to spruce fence) since they share the fence shape.
+      // Nether brick fence is the exception, but treating it as compatible
+      // is a forgivable simplification for a planner.
+      return true;
+    }
+
+    // Walls also connect to glass panes and iron bars (visual continuity).
+    if (me === 'wall' && them === 'pane') return true;
+    if (me === 'pane' && them === 'wall') return true;
+
+    return false;
   }
 
   function axisForSide(side) {
     return side === 'east' || side === 'west' ? 'x' : 'z';
+  }
+
+  // ---------- Stair shape solver ----------
+  // Vanilla rule (StairBlock.getStairShape):
+  //   1. If the stair in front (+facing) is a stair with same half and
+  //      perpendicular facing, the placed stair takes an OUTER corner on
+  //      the side whose facing matches the neighbor's.
+  //   2. Else if the stair behind (-facing) matches the same criteria,
+  //      the placed stair takes an INNER corner on the matching side.
+  //   3. Otherwise STRAIGHT.
+  function solveStairShape(record, cell) {
+    const facing = record.state?.facing || 'north';
+    const half = record.state?.half || 'bottom';
+    const front = world.cells.get(cellKey(addCell(cell, facingDelta(facing))));
+    const back = world.cells.get(cellKey(addCell(cell, facingDelta(oppositeFacing(facing)))));
+    const isCompatStair = (r) => {
+      if (!r) return null;
+      const e = state.engine.blocks.get(r.id);
+      if (!e?.behavior?.stairShape) return null;
+      if ((r.state?.half || 'bottom') !== half) return null;
+      const f = r.state?.facing || 'north';
+      if (axisForSide(f) === axisForSide(facing)) return null; // must be perpendicular
+      return f;
+    };
+    const frontF = isCompatStair(front);
+    if (frontF) {
+      return frontF === ccw(facing) ? 'outer_left' : 'outer_right';
+    }
+    const backF = isCompatStair(back);
+    if (backF) {
+      return backF === ccw(facing) ? 'inner_left' : 'inner_right';
+    }
+    return 'straight';
+  }
+
+  function oppositeFacing(f) {
+    return { north: 'south', south: 'north', east: 'west', west: 'east' }[f] || f;
+  }
+  function ccw(f) {
+    return { north: 'west', west: 'south', south: 'east', east: 'north' }[f] || f;
+  }
+  function cw(f) {
+    return { north: 'east', east: 'south', south: 'west', west: 'north' }[f] || f;
   }
 
   function objectFor(id, blockState) {
@@ -910,6 +1209,16 @@
       addCell(cell, { x: -1, y: 0, z: 0 }),
       addCell(cell, { x: 0, y: 0, z: 1 }),
       addCell(cell, { x: 0, y: 0, z: -1 }),
+    ];
+  }
+
+  function neighborhood(cell) {
+    // Cardinal + vertical, so stairs/walls also resolve based on what's
+    // above and below (for waterlogging and wall posts in the future).
+    return [
+      ...cardinalNeighborhood(cell),
+      addCell(cell, { x: 0, y: 1, z: 0 }),
+      addCell(cell, { x: 0, y: -1, z: 0 }),
     ];
   }
 
