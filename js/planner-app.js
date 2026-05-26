@@ -683,6 +683,20 @@
       }
     }
 
+    if (entry.behavior?.multiFace) {
+      const face = multiFaceKeyForPlacement(entry, normal);
+      if (!face) return rejectPlacement(`${entry.displayName} cannot attach to that face.`);
+      const existing = world.cells.get(cellKey(cell));
+      if (existing) {
+        if (existing.id !== entry.id) return rejectPlacement('That space is already filled.');
+        if (existing.state?.[face] === 'true') return rejectPlacement(`${entry.displayName} already covers that face.`);
+        existing.state = Object.assign({}, existing.state, { [face]: 'true' });
+        rebuildCellObject(cellKey(cell), existing);
+        afterWorldChange();
+        return true;
+      }
+    }
+
     const blocker = placementBlocker(entry, cell, normal, hitCell);
     if (blocker) return rejectPlacement(blocker);
     const placementState = placementStateFor(entry, cell, normal);
@@ -709,6 +723,17 @@
       if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(headCell))) return rejectPlacement('Beds need two empty blocks.');
       setCell(cell, entry.id, Object.assign({}, placementState, { part: 'foot' }), { quiet: true });
       setCell(headCell, entry.id, Object.assign({}, placementState, { part: 'head' }), { quiet: true });
+      afterWorldChange();
+      return true;
+    }
+
+    // Tall plants: lower half at the clicked cell, upper half above it.
+    if (entry.behavior?.doublePlant) {
+      const upperCell = addCell(cell, { x: 0, y: 1, z: 0 });
+      if (!inside(upperCell)) return rejectPlacement(`${entry.displayName} needs two blocks of vertical space.`);
+      if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(upperCell))) return rejectPlacement(`${entry.displayName} needs two empty blocks.`);
+      setCell(cell, entry.id, Object.assign({}, placementState, { half: 'lower' }), { quiet: true });
+      setCell(upperCell, entry.id, Object.assign({}, placementState, { half: 'upper' }), { quiet: true });
       afterWorldChange();
       return true;
     }
@@ -761,6 +786,13 @@
     const verticalClick = Math.abs(normal.y) > 0.5;
     const floorClick = normal.y > 0.5;
     const ceilingClick = normal.y < -0.5;
+    if (b.multiFace) {
+      const face = multiFaceKeyForPlacement(entry, normal);
+      if (!face) return `${entry.displayName} cannot attach to that face.`;
+      if (!hasClickedSupport(hitCell, cell, normal) && !(floorClick && cell.y === 0)) {
+        return `${entry.displayName} needs a block to attach to.`;
+      }
+    }
     if ((b.wallTorch || b.wallSign || b.wallBanner || b.wallHead || b.ladder) && !sideClick) {
       return `${entry.displayName} needs the side of a block.`;
     }
@@ -881,6 +913,10 @@
       const facing = record.state?.facing || 'north';
       const d = facingDelta(facing);
       return part === 'foot' ? addCell(cell, d) : addCell(cell, { x: -d.x, y: 0, z: -d.z });
+    }
+    if (entry.behavior?.doublePlant) {
+      const half = record.state?.half || 'lower';
+      return half === 'lower' ? addCell(cell, { x: 0, y: 1, z: 0 }) : addCell(cell, { x: 0, y: -1, z: 0 });
     }
     return null;
   }
@@ -1088,6 +1124,8 @@
         out.half = ceilingClick ? 'top' : 'bottom';
       }
       out.open = 'false';
+    } else if (b.doublePlant) {
+      out.half = 'lower';
     } else if (b.halfOnPlace) {
       out.half = ceilingClick ? 'top' : 'bottom';
     }
@@ -1102,6 +1140,14 @@
 
     if (b.fenceGateInWall) {
       out.in_wall = fenceGateInWallValue(out, cell) ? 'true' : 'false';
+    }
+
+    if (b.multiFace) {
+      for (const face of ['north', 'east', 'south', 'west', 'up', 'down']) {
+        if (face in out) out[face] = 'false';
+      }
+      const face = multiFaceKeyForPlacement(entry, normal);
+      if (face) out[face] = 'true';
     }
 
     if (b.railShape) {
@@ -1222,6 +1268,12 @@
     if (!record) return false;
     const entry = state.engine.blocks.get(record.id);
     return entry?.behavior?.connector === 'fence' || entry?.behavior?.connector === 'wall';
+  }
+
+  function multiFaceKeyForPlacement(entry, normal) {
+    const opposite = { x: -normal.x, y: -normal.y, z: -normal.z };
+    const face = normalToFacing(opposite);
+    return entry.stateSchema?.[face] ? face : null;
   }
 
   function defaultRailShape(entry, stateLike = {}) {

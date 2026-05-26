@@ -342,7 +342,12 @@
     if (keys.has('axis')) out.axis = 'y';
     if (keys.has('facing')) out.facing = 'north';
     if (keys.has('rotation')) out.rotation = '0';
-    if (keys.has('half')) out.half = (/door/.test(name) && !/trapdoor/.test(name)) ? 'lower' : 'bottom';
+    if (keys.has('half')) {
+      const values = schema.half || [];
+      if (values.includes('lower')) out.half = 'lower';
+      else if (values.includes('bottom')) out.half = 'bottom';
+      else out.half = values[0] || 'bottom';
+    }
     if (keys.has('shape')) out.shape = 'straight';
     if (keys.has('hanging')) out.hanging = 'false';
     if (keys.has('type')) out.type = /slab/.test(name) ? 'bottom' : (schema.type?.[0] || 'bottom');
@@ -414,6 +419,7 @@
     if (/rail/.test(name)) return 'rail';
     if (/redstone_wire/.test(name)) return 'redstone_wire';
     if (/_chest$|^chest$|trapped_chest/.test(name)) return 'chest';
+    if (/^(vine|glow_lichen|sculk_vein|resin_clump)$/.test(name)) return 'multi_face';
     if (/^carpet$|_carpet$|moss_carpet/.test(name)) return 'carpet';
     if (/_button$/.test(name)) return 'button';
     if (/lever/.test(name)) return 'lever';
@@ -459,9 +465,11 @@
       trapdoorPlacement: shape === 'trapdoor' && has('half') && has('facing'),
       doorTwoBlock: shape === 'door' && has('half') && has('hinge'),
       bedTwoBlock: shape === 'bed' && has('part'),
+      doublePlant: shape === 'plant' && (schema.half || []).includes('lower') && (schema.half || []).includes('upper'),
       fenceGateInWall: shape === 'fence gate' && has('in_wall'),
       railShape: shape === 'rail' && has('shape'),
       redstoneWire: shape === 'redstone_wire' && hasCardinals,
+      multiFace: shape === 'multi_face',
       redstoneTarget: shape === 'redstone_component'
         || /redstone|target|tripwire|daylight_detector|note_block/.test(name)
         || shape === 'button'
@@ -509,7 +517,7 @@
     if (/glass|pane|bars|fence|wall|stairs|slab|door|trapdoor|sign|ladder/.test(name)) return 'building';
     if (/lantern|torch|lamp|light|candle/.test(name)) return 'lighting';
     if (/rail|chest|barrel|crafting|furnace|anvil|table|bed|bell|cauldron/.test(name)) return 'utility';
-    if (/flower|mushroom|plant|grass|fern|crop|vines|roots/.test(name)) return 'nature';
+    if (/flower|mushroom|plant|grass|fern|crop|vine|lichen|sculk_vein|resin_clump|roots/.test(name)) return 'nature';
     return 'blocks';
   }
 
