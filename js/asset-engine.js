@@ -371,6 +371,7 @@
     if (keys.has('charges')) out.charges = '0';
     if (keys.has('eggs')) out.eggs = '1';
     if (keys.has('hatch')) out.hatch = '0';
+    if (keys.has('thickness')) out.thickness = schema.thickness?.includes('tip') ? 'tip' : (schema.thickness?.[0] || 'tip');
     if (keys.has('distance')) out.distance = schema.distance?.includes('7') ? '7' : (schema.distance?.[0] || '1');
     if (keys.has('persistent')) out.persistent = 'false';
     if (keys.has('face')) out.face = 'wall';
@@ -420,6 +421,8 @@
     if (/redstone_wire/.test(name)) return 'redstone_wire';
     if (/_chest$|^chest$|trapped_chest/.test(name)) return 'chest';
     if (/^(vine|glow_lichen|sculk_vein|resin_clump)$/.test(name)) return 'multi_face';
+    if (/coral_wall_fan$/.test(name)) return 'wall_fan';
+    if (/coral_fan$/.test(name)) return 'floor_fan';
     if (/^carpet$|_carpet$|moss_carpet/.test(name)) return 'carpet';
     if (/_button$/.test(name)) return 'button';
     if (/lever/.test(name)) return 'lever';
@@ -434,6 +437,7 @@
     if (/(skull|head)$/.test(name)) return 'head';
     if (/lantern/.test(name)) return 'lantern';
     if (/end_rod|lightning_rod/.test(name)) return 'rod';
+    if (/^pointed_dripstone$/.test(name)) return 'pointed_dripstone';
     if (/repeater|comparator/.test(name)) return 'redstone_component';
     if (/observer|dispenser|dropper|piston|furnace|smoker|blast_furnace|barrel|hopper|loom|lectern|stonecutter|crafter/.test(name)) return 'machine';
     if (/^snow$|snow_layer/.test(name)) return 'snow_layer';
@@ -470,6 +474,9 @@
       railShape: shape === 'rail' && has('shape'),
       redstoneWire: shape === 'redstone_wire' && hasCardinals,
       multiFace: shape === 'multi_face',
+      wallFan: shape === 'wall_fan' && has('facing'),
+      floorFan: shape === 'floor_fan',
+      pointedDripstone: shape === 'pointed_dripstone',
       redstoneTarget: shape === 'redstone_component'
         || /redstone|target|tripwire|daylight_detector|note_block/.test(name)
         || shape === 'button'
@@ -517,7 +524,7 @@
     if (/glass|pane|bars|fence|wall|stairs|slab|door|trapdoor|sign|ladder/.test(name)) return 'building';
     if (/lantern|torch|lamp|light|candle/.test(name)) return 'lighting';
     if (/rail|chest|barrel|crafting|furnace|anvil|table|bed|bell|cauldron/.test(name)) return 'utility';
-    if (/flower|mushroom|plant|grass|fern|crop|vine|lichen|sculk_vein|resin_clump|roots/.test(name)) return 'nature';
+    if (/flower|mushroom|plant|grass|fern|crop|vine|lichen|sculk_vein|resin_clump|coral|dripstone|roots/.test(name)) return 'nature';
     return 'blocks';
   }
 

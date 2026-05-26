@@ -766,11 +766,15 @@
       if (entry.behavior?.head && !entry.behavior?.wallHead) {
         tryNames.push(entry.name.replace(/(skull|head)$/, 'wall_$1'));
       }
+      if (entry.behavior?.floorFan) {
+        tryNames.push(entry.name.replace(/_coral_fan$/, '_coral_wall_fan'));
+      }
     } else {
       if (entry.behavior?.wallTorch) tryNames.push(entry.name.replace(/wall_torch$/, 'torch'));
       if (entry.behavior?.wallSign) tryNames.push(entry.name.replace(/wall_hanging_sign$/, 'hanging_sign'), entry.name.replace(/wall_sign$/, 'sign'));
       if (entry.behavior?.wallBanner) tryNames.push(entry.name.replace(/wall_banner$/, 'banner'));
       if (entry.behavior?.wallHead) tryNames.push(entry.name.replace(/wall_(skull|head)$/, '$1'));
+      if (entry.behavior?.wallFan) tryNames.push(entry.name.replace(/_coral_wall_fan$/, '_coral_fan'));
     }
     for (const name of tryNames) {
       const w = state.engine.blocks.get(`${entry.ns}:${name}`);
@@ -792,6 +796,17 @@
       if (!hasClickedSupport(hitCell, cell, normal) && !(floorClick && cell.y === 0)) {
         return `${entry.displayName} needs a block to attach to.`;
       }
+    }
+    if (b.faceAttachment && !hasClickedSupport(hitCell, cell, normal) && !(floorClick && cell.y === 0)) {
+      return `${entry.displayName} needs a block face to attach to.`;
+    }
+    if (b.wallFan && !sideClick) return `${entry.displayName} needs the side of a block.`;
+    if (b.wallFan && !hasClickedSupport(hitCell, cell, normal)) return `${entry.displayName} needs a block to attach to.`;
+    if (b.floorFan && !floorClick) return `${entry.displayName} goes on a top surface.`;
+    if (b.floorFan && !hasFloorSupport(hitCell, cell)) return `${entry.displayName} needs support underneath.`;
+    if (b.pointedDripstone && !verticalClick) return 'Pointed Dripstone attaches above or below.';
+    if (b.pointedDripstone && !hasClickedSupport(hitCell, cell, normal) && !(floorClick && cell.y === 0)) {
+      return floorClick ? 'Pointed Dripstone needs support underneath.' : 'Pointed Dripstone needs a block above it.';
     }
     if ((b.wallTorch || b.wallSign || b.wallBanner || b.wallHead || b.ladder) && !sideClick) {
       return `${entry.displayName} needs the side of a block.`;
@@ -1150,6 +1165,16 @@
       if (face) out[face] = 'true';
     }
 
+    if (b.wallFan && sideClick) {
+      // Coral wall fan facing points away from the supporting block.
+      out.facing = normalToFacing(normal);
+    }
+
+    if (b.pointedDripstone) {
+      out.vertical_direction = ceilingClick ? 'down' : 'up';
+      if ('thickness' in out) out.thickness = 'tip';
+    }
+
     if (b.railShape) {
       out.shape = defaultRailShape(entry, out);
     }
@@ -1434,11 +1459,13 @@
   function canConnect(entry, otherRecord, side) {
     const other = state.engine.blocks.get(otherRecord.id);
     if (!entry || !other) return false;
-    // Solid full cubes are universal connection targets.
-    if (other.behavior?.solidConnectorTarget || other.fullCube) return true;
-
     const me = entry.behavior?.connector;
     const them = other.behavior?.connector;
+    if (!me) return false;
+
+    // Solid full cubes are universal connection targets; stairs expose only
+    // their full-height back/inner faces.
+    if (hasSolidConnectionFace(otherRecord, side)) return true;
 
     // Perpendicular fence gate: fences and walls visually connect to gates
     // whose facing axis is perpendicular to the connection side.
@@ -1449,10 +1476,7 @@
 
     // Like-to-like: fence/fence, wall/wall, pane/pane.
     if (me && them && me === them) {
-      // Different fence materials still connect to each other in vanilla
-      // (e.g. oak fence to spruce fence) since they share the fence shape.
-      // Nether brick fence is the exception, but treating it as compatible
-      // is a forgivable simplification for a planner.
+      if (me === 'fence') return fenceFamiliesConnect(entry, other);
       return true;
     }
 
@@ -1461,6 +1485,36 @@
     if (me === 'pane' && them === 'wall') return true;
 
     return false;
+  }
+
+  function hasSolidConnectionFace(record, sideFromSource) {
+    const entry = state.engine.blocks.get(record.id);
+    if (!entry) return false;
+    if ((entry.behavior?.solidConnectorTarget || entry.fullCube) && !transparentConnectorBlock(entry)) return true;
+    if (entry.behavior?.stairShape) {
+      const neighborFace = oppositeFacing(sideFromSource);
+      return stairFullFaces(record).includes(neighborFace);
+    }
+    return false;
+  }
+
+  function transparentConnectorBlock(entry) {
+    return /(^|_)glass$|_stained_glass$|leaves$|ice$|slime_block$|honey_block$/.test(entry.name || '');
+  }
+
+  function stairFullFaces(record) {
+    const facing = record.state?.facing || 'north';
+    const shape = record.state?.shape || 'straight';
+    const faces = [facing];
+    if (shape === 'inner_left') faces.push(ccw(facing));
+    if (shape === 'inner_right') faces.push(cw(facing));
+    return faces;
+  }
+
+  function fenceFamiliesConnect(a, b) {
+    const aNether = /(^|_)nether_brick_fence$/.test(a.name || '');
+    const bNether = /(^|_)nether_brick_fence$/.test(b.name || '');
+    return aNether === bNether;
   }
 
   function axisForSide(side) {
