@@ -34,7 +34,7 @@
     initThree();
     renderCatalog();
     updateSelected();
-    toast('Load a vanilla client jar to begin.');
+    if (!loadPackFromQuery()) toast('Load a vanilla client jar to begin.');
   }
 
   function bindUI() {
@@ -135,6 +135,26 @@
       console.error(err);
       toast(`Pack failed: ${err.message || err}`);
     }
+  }
+
+  function loadPackFromQuery() {
+    const url = new URL(window.location.href);
+    const packUrl = url.searchParams.get('pack');
+    if (!packUrl) return false;
+    (async () => {
+      try {
+        toast(`Fetching ${packUrl}...`);
+        const res = await fetch(packUrl);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const blob = await res.blob();
+        const name = packUrl.split('/').pop() || 'pack.jar';
+        await loadPack(new File([blob], name, { type: blob.type || 'application/java-archive' }));
+      } catch (err) {
+        console.error(err);
+        toast(`Pack failed: ${err.message || err}`);
+      }
+    })();
+    return true;
   }
 
   function renderCatalog() {
@@ -1122,7 +1142,9 @@
     if (textureCache.has(url)) return textureCache.get(url);
     let resolveLoad;
     textureLoadPromises.set(url, new Promise(r => { resolveLoad = r; }));
+    const animation = state.engine.textureMetaForUrl(url);
     const texture = new THREE.TextureLoader().load(url, () => {
+      applyAnimatedTextureFrame(texture, animation);
       needsRender = true;
       resolveLoad();
     }, undefined, () => resolveLoad());
@@ -1134,6 +1156,38 @@
     material.userData.textureUrl = url;
     textureCache.set(url, material);
     return material;
+  }
+
+  function applyAnimatedTextureFrame(texture, animation) {
+    if (!animation || !texture.image) return;
+    const image = texture.image;
+    const frameWidth = positiveInt(animation.width) || image.width;
+    const frameHeight = positiveInt(animation.height) || frameWidth;
+    if (!frameWidth || !frameHeight || (image.width <= frameWidth && image.height <= frameHeight)) return;
+
+    const columns = Math.max(1, Math.floor(image.width / frameWidth));
+    const rows = Math.max(1, Math.floor(image.height / frameHeight));
+    const frame = clamp(firstAnimationFrame(animation.frames), 0, columns * rows - 1);
+    const repeatX = frameWidth / image.width;
+    const repeatY = frameHeight / image.height;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.offset.set((frame % columns) * repeatX, Math.floor(frame / columns) * repeatY);
+    texture.needsUpdate = true;
+  }
+
+  function firstAnimationFrame(frames) {
+    if (!Array.isArray(frames) || !frames.length) return 0;
+    const first = frames[0];
+    const raw = typeof first === 'object' && first ? first.index : first;
+    const frame = Number(raw);
+    return Number.isFinite(frame) ? frame : 0;
+  }
+
+  function positiveInt(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   }
 
   function missingMaterial() {

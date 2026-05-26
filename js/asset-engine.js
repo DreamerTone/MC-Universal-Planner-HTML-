@@ -15,6 +15,8 @@
       this.lang = new Map();
       this.models = new Map();
       this.textures = new Map();
+      this.textureMeta = new Map();
+      this.textureMetaByUrl = new Map();
       this.blockstates = new Map();
     }
 
@@ -26,6 +28,12 @@
           this.lang.set(`${ns}:${key}`, value);
         }
         this._mergeMap(data.textures, (path, url) => this.textures.set(`${ns}:${path}`, url));
+        this._mergeMap(data.textureMeta, (path, meta) => {
+          const key = `${ns}:${path}`;
+          this.textureMeta.set(key, meta);
+          const url = this.textures.get(key);
+          if (url) this.textureMetaByUrl.set(url, meta);
+        });
         this._mergeMap(data.models, (path, model) => this.models.set(`${ns}:${path}`, model));
         this._mergeMap(data.blockstates, (name, blockstate) => {
           const id = `${ns}:${name}`;
@@ -186,6 +194,10 @@
       return this.textures.get(key)
         || this.textures.get(key.replace(/^([^:]+):/, 'minecraft:'))
         || null;
+    }
+
+    textureMetaForUrl(url) {
+      return this.textureMetaByUrl.get(url) || null;
     }
 
     itemLayer0(id) {

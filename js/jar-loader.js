@@ -10,6 +10,7 @@
   // 1.21+    -> data/<ns>/recipe/<name>.json
   const RE = {
     texture:    /^assets\/([^/]+)\/textures\/(block|item|blocks|items)\/(.+)\.png$/,
+    textureMeta:/^assets\/([^/]+)\/textures\/(block|item|blocks|items)\/(.+)\.png\.mcmeta$/,
     model:      /^assets\/([^/]+)\/models\/(block|item)\/(.+)\.json$/,
     blockstate: /^assets\/([^/]+)\/blockstates\/(.+)\.json$/,
     lang:       /^assets\/([^/]+)\/lang\/en_us\.json$/,
@@ -57,11 +58,23 @@
 
     let done = 0;
     const step = Math.max(1, Math.floor(entries.length / 50));
+    const CHUNK = 200;
+
+    const textureMetaEntries = entries.filter(({ path }) => RE.textureMeta.test(path));
+    const assetEntries = entries.filter(({ path }) => !RE.textureMeta.test(path));
+
+    // Animated texture metadata must be known before PNG blobs are turned into
+    // object URLs, otherwise stacked animation strips render as smeared faces.
+    for (let i = 0; i < textureMetaEntries.length; i += CHUNK) {
+      const chunk = textureMetaEntries.slice(i, i + CHUNK);
+      await Promise.all(chunk.map(({ path, entry }) => processEntry(path, entry, pack)));
+      done += chunk.length;
+      await new Promise(r => setTimeout(r, 0));
+    }
 
     // Process in chunks to keep UI responsive
-    const CHUNK = 200;
-    for (let i = 0; i < entries.length; i += CHUNK) {
-      const chunk = entries.slice(i, i + CHUNK);
+    for (let i = 0; i < assetEntries.length; i += CHUNK) {
+      const chunk = assetEntries.slice(i, i + CHUNK);
       await Promise.all(chunk.map(({ path, entry }) => processEntry(path, entry, pack)));
       done += chunk.length;
       if (onProgress && (done % step === 0 || done === entries.length)) {
@@ -83,6 +96,7 @@
         recipes: new Map(),      // name -> raw recipe json (+ ns prepended)
         models: new Map(),       // "block/x" | "item/x" -> json
         textures: new Map(),     // "block/x" | "item/x" -> blob URL
+        textureMeta: new Map(),  // "block/x" | "item/x" -> animation metadata
         blockstates: new Map(),  // name -> json
         tags: new Map(),         // "item/x" | "block/x" -> json
         lang: {},
@@ -98,7 +112,15 @@
         let [, ns, kind, name] = m;
         kind = kind === 'blocks' ? 'block' : (kind === 'items' ? 'item' : kind);
         const blob = await entry.async('blob');
-        ensureNs(pack, ns).textures.set(`${kind}/${name}`, URL.createObjectURL(blob));
+        const data = ensureNs(pack, ns);
+        const key = `${kind}/${name}`;
+        const textureBlob = await firstAnimationFrameBlob(blob, data.textureMeta.get(key));
+        data.textures.set(key, URL.createObjectURL(textureBlob));
+      } else if ((m = path.match(RE.textureMeta))) {
+        let [, ns, kind, name] = m;
+        kind = kind === 'blocks' ? 'block' : (kind === 'items' ? 'item' : kind);
+        const json = JSON.parse(await entry.async('string'));
+        if (json.animation) ensureNs(pack, ns).textureMeta.set(`${kind}/${name}`, json.animation);
       } else if ((m = path.match(RE.model))) {
         const [, ns, kind, name] = m;
         const json = JSON.parse(await entry.async('string'));
@@ -134,6 +156,60 @@
       // Single corrupt file shouldn't abort the load
       console.warn('[jar-loader] failed on', path, e);
     }
+  }
+
+  async function firstAnimationFrameBlob(blob, animation) {
+    if (!animation) return blob;
+    if (!global.createImageBitmap || !global.document) return blob;
+
+    let bitmap = null;
+    try {
+      bitmap = await createImageBitmap(blob);
+      const frameWidth = positiveInt(animation.width) || bitmap.width;
+      const frameHeight = positiveInt(animation.height) || frameWidth;
+      if (!frameWidth || !frameHeight || (bitmap.width <= frameWidth && bitmap.height <= frameHeight)) {
+        return blob;
+      }
+
+      const columns = Math.max(1, Math.floor(bitmap.width / frameWidth));
+      const rows = Math.max(1, Math.floor(bitmap.height / frameHeight));
+      const frame = clamp(firstFrameIndex(animation.frames), 0, columns * rows - 1);
+      const sx = (frame % columns) * frameWidth;
+      const sy = Math.floor(frame / columns) * frameHeight;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = frameWidth;
+      canvas.height = frameHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(bitmap, sx, sy, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
+
+      return await new Promise(resolve => {
+        canvas.toBlob(next => resolve(next || blob), 'image/png');
+      });
+    } catch (e) {
+      console.warn('[jar-loader] animated texture crop failed', e);
+      return blob;
+    } finally {
+      if (bitmap && typeof bitmap.close === 'function') bitmap.close();
+    }
+  }
+
+  function firstFrameIndex(frames) {
+    if (!Array.isArray(frames) || !frames.length) return 0;
+    const first = frames[0];
+    const raw = typeof first === 'object' && first ? first.index : first;
+    const index = Number(raw);
+    return Number.isFinite(index) ? index : 0;
+  }
+
+  function positiveInt(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
   }
 
   async function processManifest(path, entry, pack) {

@@ -16,6 +16,8 @@ This version starts with a small asset engine:
   live side by side.
 - Resolve model parent chains before rendering.
 - Resolve texture variables like `#all`, `#side`, `#texture`, and `#layer0`.
+- Read `.png.mcmeta` animation metadata and collapse animated texture strips to
+  a single frame for stable model rendering and inventory thumbnails.
 - Resolve blockstate `variants` and `multipart` rules before creating meshes.
 - Render from model `elements`, `faces`, rotations, UVs, and blockstate model
   rotations instead of hand-built block guesses.
@@ -48,6 +50,12 @@ python -m http.server 8000
 ```
 
 Then open `http://localhost:8000/`.
+
+For repeatable local testing, a pack can also be loaded from a same-origin URL:
+
+```text
+http://localhost:8000/?pack=test-tmp/1.21.11.jar
+```
 
 Load a vanilla client jar from:
 
