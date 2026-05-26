@@ -58,3 +58,10 @@ Load a vanilla client jar from:
 Press `E` to open the creative inventory. Use the Debug panel to inspect the
 resolved blockstate, model parts, texture keys, element bounds, face UVs, and
 shape classification for the selected block.
+
+## Behavior Research
+
+The block behavior plan is tracked in `docs/behavior-research.md`. The short
+version: render from jar assets, infer common behavior from blockstate schemas
+and tags, and implement vanilla behavior families instead of hardcoding every
+block id one by one.
