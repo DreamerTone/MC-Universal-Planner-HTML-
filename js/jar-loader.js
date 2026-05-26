@@ -9,7 +9,7 @@
   // pre-1.21 -> data/<ns>/recipes/<name>.json
   // 1.21+    -> data/<ns>/recipe/<name>.json
   const RE = {
-    texture:    /^assets\/([^/]+)\/textures\/(block|item)\/(.+)\.png$/,
+    texture:    /^assets\/([^/]+)\/textures\/(block|item|blocks|items)\/(.+)\.png$/,
     model:      /^assets\/([^/]+)\/models\/(block|item)\/(.+)\.json$/,
     blockstate: /^assets\/([^/]+)\/blockstates\/(.+)\.json$/,
     lang:       /^assets\/([^/]+)\/lang\/en_us\.json$/,
@@ -95,7 +95,8 @@
     let m;
     try {
       if ((m = path.match(RE.texture))) {
-        const [, ns, kind, name] = m;
+        let [, ns, kind, name] = m;
+        kind = kind === 'blocks' ? 'block' : (kind === 'items' ? 'item' : kind);
         const blob = await entry.async('blob');
         ensureNs(pack, ns).textures.set(`${kind}/${name}`, URL.createObjectURL(blob));
       } else if ((m = path.match(RE.model))) {

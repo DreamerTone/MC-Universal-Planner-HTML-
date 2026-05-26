@@ -8,206 +8,111 @@
 </head>
 <body>
 
-<!-- JAR GATE: shown until a vanilla jar has been loaded -->
-<section id="gate" class="gate">
-  <div class="gate-card">
-    <h1>MC Universal Planner</h1>
-    <p class="tagline">Vanilla blocks, recipes, and a 3D build view &mdash; powered by your game's own <code>.jar</code>.</p>
-
-    <div id="gate-drop" class="drop-zone" tabindex="0">
-      <div class="drop-inner">
-        <div class="drop-icon">&#x21E9;</div>
-        <div class="drop-text">
-          <strong>Drop a Minecraft client .jar here</strong>
-          <span>or click to choose a file</span>
-        </div>
-        <input id="gate-file" type="file" accept=".jar,application/java-archive,application/zip" hidden>
-      </div>
-    </div>
-
-    <div id="gate-cached" class="cached hidden">
-      <p>A previously loaded pack is cached.</p>
-      <div class="cached-info">
-        <div><span class="lbl">File</span><span id="cached-name">-</span></div>
-        <div><span class="lbl">MC version</span><span id="cached-version">-</span></div>
-      </div>
-      <div class="row">
-        <button id="gate-use-cached" class="btn primary">Continue with cached pack</button>
-        <button id="gate-clear-cached" class="btn ghost">Forget &amp; load new</button>
-      </div>
-    </div>
-
-    <div id="gate-status" class="status"></div>
-
-    <details class="help">
-      <summary>Where do I find a vanilla .jar?</summary>
-      <p>Vanilla client jars live in your Minecraft installation:</p>
-      <ul>
-        <li><b>Windows</b>: <code>%appdata%\.minecraft\versions\&lt;version&gt;\&lt;version&gt;.jar</code></li>
-        <li><b>macOS</b>: <code>~/Library/Application Support/minecraft/versions/&lt;version&gt;/&lt;version&gt;.jar</code></li>
-        <li><b>Linux</b>: <code>~/.minecraft/versions/&lt;version&gt;/&lt;version&gt;.jar</code></li>
-      </ul>
-      <p>Use the <i>client</i> jar (not the server jar) so block textures are included. Files stay on your device &mdash; nothing is uploaded.</p>
-    </details>
-  </div>
-</section>
-
-<!-- MAIN APP: hidden until gate is cleared -->
-<section id="app" class="app hidden">
+<section class="shell">
   <header class="topbar">
-    <div class="brand">MC Universal Planner</div>
-    <nav class="tabs">
-      <button class="tab active" data-tab="builder">Builder</button>
-      <button class="tab" data-tab="recipes">Recipes</button>
-      <button class="tab" data-tab="browser">Blocks</button>
-      <button class="tab" data-tab="materials">Materials</button>
-      <button class="tab" data-tab="packs">Packs</button>
-    </nav>
-    <div class="pack-meta">
-      <span id="pack-version">-</span>
-      <button id="change-pack" class="btn ghost small" title="Load a different jar">Change jar</button>
+    <div class="brand">
+      <strong>MC Universal Planner</strong>
+      <span id="pack-label">Load a client jar or resource pack</span>
     </div>
+    <nav class="tabs">
+      <button class="tab active" data-panel="builder">Builder</button>
+      <button class="tab" data-panel="library">Library</button>
+      <button class="tab" data-panel="debug">Debug</button>
+    </nav>
+    <button id="load-pack" class="btn primary">Load Pack</button>
+    <input id="pack-file" type="file" accept=".jar,.zip,application/java-archive,application/zip" hidden>
   </header>
 
-  <main id="views">
+  <main class="workspace">
+    <aside class="side-panel" data-panel-view="builder">
+      <div id="drop-zone" class="drop-zone" tabindex="0">
+        <div class="drop-icon">+</div>
+        <strong>Drop a Minecraft jar or pack</strong>
+        <span>Vanilla first, mod/resource packs after</span>
+      </div>
 
-    <!-- BUILDER VIEW -->
-    <section class="view active" data-view="builder">
-      <div class="builder-main">
-        <div class="builder-toolbar">
-          <div class="row">
-            <button id="open-inventory" class="btn primary small">Inventory</button>
-            <div id="selected-block" class="selected-block compact">
-              <span>No block selected</span>
-            </div>
-            <div class="palette-tools">
-              <button id="tool-place" class="tool active" data-tool="place" title="Place block">Place</button>
-              <button id="tool-erase" class="tool" data-tool="erase" title="Erase block">Erase</button>
-              <button id="tool-pick" class="tool" data-tool="pick" title="Pick block from build">Pick</button>
-              <button id="tool-fill" class="tool" data-tool="fill" title="Fill ground layer">Fill</button>
-            </div>
-            <label>Size</label>
-            <input id="grid-w" type="number" min="1" max="64" value="16" title="X">
-            <span>&times;</span>
-            <input id="grid-h" type="number" min="1" max="64" value="16" title="Y (height)">
-            <span>&times;</span>
-            <input id="grid-d" type="number" min="1" max="64" value="16" title="Z">
-            <button id="apply-size" class="btn small">Apply</button>
-            <span class="muted" style="margin-left:12px;font-size:11px">
-              Left-drag: orbit &middot; right/shift-drag: pan &middot; wheel: zoom
-            </span>
-          </div>
-          <div class="row">
-            <button id="clear-build" class="btn danger small">Clear all</button>
-            <button id="save-build" class="btn small">Save</button>
-            <button id="load-build" class="btn small">Load</button>
-            <button id="export-build" class="btn small">Export JSON</button>
-            <input id="import-build" type="file" accept=".json" hidden>
-            <button id="import-build-btn" class="btn small">Import JSON</button>
-          </div>
+      <section class="tool-section">
+        <label class="field-label" for="search">Search Blocks</label>
+        <input id="search" type="search" placeholder="oak fence, lantern, sign">
+      </section>
+
+      <section class="tool-section">
+        <div class="section-head">
+          <strong>Categories</strong>
+          <span id="block-count">0 blocks</span>
         </div>
-        <div class="viewport-wrap">
-          <canvas id="builder-canvas" tabindex="0"></canvas>
+        <div id="categories" class="category-strip"></div>
+      </section>
+
+      <section class="tool-section selected-card">
+        <div class="section-head">
+          <strong>Selected</strong>
+          <button id="open-creative" class="icon-btn" title="Open creative inventory">E</button>
         </div>
-        <div class="grid-status">
-          <span id="cursor-coords">-</span>
-          <span id="cell-info"></span>
+        <div id="selected-card" class="selected-empty">No block selected</div>
+      </section>
+
+      <section class="tool-section">
+        <div class="section-head">
+          <strong>Build</strong>
+          <span id="build-count">0 placed</span>
         </div>
+        <div class="button-grid">
+          <button id="tool-place" class="btn small active">Place</button>
+          <button id="tool-erase" class="btn small">Erase</button>
+          <button id="tool-pick" class="btn small">Pick</button>
+          <button id="clear-build" class="btn small danger">Clear</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="stage" data-panel-view="builder">
+      <canvas id="builder-canvas" tabindex="0"></canvas>
+      <div class="stage-hud">
+        <span id="cursor-label">Ready</span>
+        <span>Left click place | Shift click erase | E inventory</span>
       </div>
     </section>
 
-    <!-- RECIPES VIEW -->
-    <section class="view" data-view="recipes">
-      <div class="panel">
-        <div class="row gap">
-          <input id="recipe-search" type="search" placeholder="Search items / blocks (e.g. anvil, oak_planks)">
-          <label>Count <input id="recipe-count" type="number" min="1" value="1"></label>
-          <label class="check"><input id="recipe-break-raw" type="checkbox" checked> Break down to raw materials</label>
+    <aside class="detail-panel">
+      <section class="panel-view active" data-panel-view="builder">
+        <div class="section-head">
+          <strong>Model Truth</strong>
+          <button id="rerender" class="icon-btn" title="Refresh selected model">R</button>
         </div>
-        <div class="recipe-layout">
-          <div id="recipe-results" class="recipe-results"></div>
-          <div id="recipe-detail" class="recipe-detail">
-            <p class="muted">Select an item to see its full crafting breakdown.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+        <pre id="model-truth" class="debug-pre">Load a pack, then choose a block.</pre>
+      </section>
 
-    <!-- BLOCK BROWSER -->
-    <section class="view" data-view="browser">
-      <div class="panel">
-        <div class="row gap">
-          <input id="browser-search" type="search" placeholder="Search all blocks &amp; items">
-          <label>Namespace
-            <select id="browser-ns"></select>
-          </label>
-          <label>Type
-            <select id="browser-type">
-              <option value="all">All</option>
-              <option value="block">Blocks</option>
-              <option value="item">Items</option>
-            </select>
-          </label>
-          <label>Category
-            <select id="browser-category"></select>
-          </label>
-          <span id="browser-count" class="muted"></span>
+      <section class="panel-view" data-panel-view="library">
+        <div class="section-head">
+          <strong>Library</strong>
+          <span id="library-count">0</span>
         </div>
-        <div id="browser-grid" class="browser-grid"></div>
-      </div>
-    </section>
+        <div id="library-grid" class="library-grid"></div>
+      </section>
 
-    <!-- MATERIALS / BUILD COST -->
-    <section class="view" data-view="materials">
-      <div class="panel">
-        <div class="row gap">
-          <h2>Build materials</h2>
-          <label class="check"><input id="mat-break-raw" type="checkbox" checked> Break down to raw materials</label>
-          <button id="mat-refresh" class="btn small">Refresh</button>
+      <section class="panel-view" data-panel-view="debug">
+        <div class="section-head">
+          <strong>Resolved Blockstate</strong>
+          <span id="debug-id"></span>
         </div>
-        <p class="muted">Total blocks placed in the current build, with the materials needed to craft them.</p>
-        <div id="materials-content"></div>
-      </div>
-    </section>
-
-    <!-- PACK MANAGER -->
-    <section class="view" data-view="packs">
-      <div class="panel">
-        <div class="pack-layout">
-          <section>
-            <div class="row gap">
-              <h2>Loaded packs</h2>
-              <button id="pack-add-jar" class="btn small">Add jar or zip</button>
-              <input id="pack-add-file" type="file" accept=".jar,.zip,application/java-archive,application/zip" hidden>
-            </div>
-            <p class="muted">Layer vanilla first, then mod jars or data/resource packs. Namespaces stay separate so future modpack support can classify and render each pack without hard-coded vanilla lists.</p>
-            <div id="pack-list" class="pack-list"></div>
-          </section>
-          <section>
-            <h2>Classification</h2>
-            <p class="muted">The planner currently guesses categories from registry ids, tags, models, and recipe shapes. Unknown modded content is kept visible instead of hidden, then can be refined into custom rules later.</p>
-            <div id="category-list" class="category-list"></div>
-          </section>
-        </div>
-      </div>
-    </section>
-
+        <textarea id="state-json" class="state-json" spellcheck="false">{}</textarea>
+        <pre id="debug-json" class="debug-pre tall">Nothing selected.</pre>
+      </section>
+    </aside>
   </main>
 
   <div id="creative-overlay" class="creative-overlay hidden" aria-hidden="true">
-    <section class="creative-inventory" role="dialog" aria-modal="true" aria-labelledby="creative-title">
+    <section class="creative-modal" role="dialog" aria-modal="true" aria-labelledby="creative-title">
       <header class="creative-head">
         <div>
           <h2 id="creative-title">Creative Inventory</h2>
-          <div id="creative-selected" class="creative-selected">No block selected</div>
+          <span id="creative-meta">Press E to close</span>
         </div>
-        <button id="close-inventory" class="btn ghost small" title="Close inventory">Close</button>
+        <button id="close-creative" class="icon-btn" title="Close">x</button>
       </header>
-      <div id="creative-categories" class="creative-categories"></div>
-      <div class="creative-search">
-        <input id="creative-search" type="search" placeholder="Search blocks">
-        <span id="creative-count" class="muted"></span>
-      </div>
+      <div id="creative-tabs" class="creative-tabs"></div>
+      <input id="creative-search" type="search" placeholder="Search every loaded block">
       <div id="creative-grid" class="creative-grid"></div>
     </section>
   </div>
@@ -215,19 +120,11 @@
   <div id="toast" class="toast hidden"></div>
 </section>
 
-<!-- libs -->
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
-<!-- app -->
-<script src="js/storage.js"></script>
-<script src="js/ui.js"></script>
 <script src="js/jar-loader.js"></script>
-<script src="js/registry.js"></script>
-<script src="js/recipes.js"></script>
-<script src="js/builder.js"></script>
-<script src="js/browser-view.js"></script>
-<script src="js/app.js"></script>
+<script src="js/asset-engine.js"></script>
+<script src="js/planner-app.js"></script>
 
 </body>
 </html>
