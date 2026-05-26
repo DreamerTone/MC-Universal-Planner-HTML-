@@ -1016,6 +1016,9 @@
         if (entry.behavior?.stairShape) {
           merged = Object.assign({}, merged, { shape: solveStairShape(record, next) });
         }
+        if (entry.behavior?.fenceGate) {
+          merged = Object.assign({}, merged, { facing: solveFenceGateFacing(record, next, merged) });
+        }
         if (entry.behavior?.fenceGateInWall) {
           merged = Object.assign({}, merged, { in_wall: fenceGateInWallValue(merged, next) ? 'true' : 'false' });
         }
@@ -1181,6 +1184,44 @@
       const otherEntry = other && state.engine.blocks.get(other.id);
       return otherEntry?.behavior?.connector === 'wall';
     });
+  }
+
+  function solveFenceGateFacing(record, cell, stateLike = record.state) {
+    const entry = state.engine.blocks.get(record.id);
+    const values = entry?.stateSchema?.facing || [];
+    const current = stateLike.facing || record.state?.facing || entry?.defaultState?.facing || 'north';
+    if (!values.length) return current;
+
+    const xCount = Number(gateAlignedNeighbor(cell, { x: 1, y: 0, z: 0 }))
+      + Number(gateAlignedNeighbor(cell, { x: -1, y: 0, z: 0 }));
+    const zCount = Number(gateAlignedNeighbor(cell, { x: 0, y: 0, z: 1 }))
+      + Number(gateAlignedNeighbor(cell, { x: 0, y: 0, z: -1 }));
+
+    // A gate's facing axis is perpendicular to the fence/wall line it sits in:
+    // east-west neighbors need a north/south-facing gate, and vice versa.
+    let lineAxis = null;
+    if (xCount === 2 && zCount !== 2) lineAxis = 'x';
+    else if (zCount === 2 && xCount !== 2) lineAxis = 'z';
+    else if (xCount > zCount && xCount > 0) lineAxis = 'x';
+    else if (zCount > xCount && zCount > 0) lineAxis = 'z';
+    if (!lineAxis) return current;
+
+    const desiredFacingAxis = lineAxis === 'x' ? 'z' : 'x';
+    if (axisForSide(current) === desiredFacingAxis) return current;
+
+    const cameraFacing = facingFromCamera();
+    if (axisForSide(cameraFacing) === desiredFacingAxis && values.includes(cameraFacing)) {
+      return cameraFacing;
+    }
+    const fallback = desiredFacingAxis === 'z' ? ['north', 'south'] : ['east', 'west'];
+    return fallback.find(facing => values.includes(facing)) || current;
+  }
+
+  function gateAlignedNeighbor(cell, delta) {
+    const record = world.cells.get(cellKey(addCell(cell, delta)));
+    if (!record) return false;
+    const entry = state.engine.blocks.get(record.id);
+    return entry?.behavior?.connector === 'fence' || entry?.behavior?.connector === 'wall';
   }
 
   function defaultRailShape(entry, stateLike = {}) {
