@@ -91,12 +91,26 @@
     }
 
     window.addEventListener('keydown', e => {
-      if (e.key.toLowerCase() === 'e' && !isTyping()) {
+      if (e.key === 'Escape' && state.creativeOpen) {
+        closeCreative();
+        return;
+      }
+      if (isTyping()) return;
+
+      if (e.key.toLowerCase() === 'e') {
         e.preventDefault();
         state.creativeOpen ? closeCreative() : openCreative();
       }
-      if (e.key === 'Escape' && state.creativeOpen) closeCreative();
-      if (e.key === 'F3' && !isTyping()) {
+      const shortcutTool = ({ 1: 'place', 2: 'use', 3: 'erase', 4: 'pick' })[e.key];
+      if (shortcutTool) {
+        e.preventDefault();
+        setTool(shortcutTool, true);
+      }
+      if (e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        resetCamera();
+      }
+      if (e.key === 'F3') {
         e.preventDefault();
         toggleDebugMode();
       }
@@ -449,9 +463,10 @@
     for (const view of $$('.panel-view')) view.classList.toggle('active', view.dataset.panelView === panel);
   }
 
-  function setTool(tool) {
+  function setTool(tool, announce = false) {
     state.tool = tool;
     for (const id of ['place', 'use', 'erase', 'pick']) $(`#tool-${id}`).classList.toggle('active', id === tool);
+    if (announce) toast(`Tool: ${humanName(tool)}`);
   }
 
   function openCreative() {
@@ -506,14 +521,29 @@
     }, { passive: false });
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', clearPointerDrag);
+    canvas.addEventListener('lostpointercapture', clearPointerDrag);
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     new ResizeObserver(resize).observe(canvas.parentElement);
     resize();
     loop();
   }
 
+  function resetCamera(showToast = true) {
+    if (!controls) return;
+    controls.yaw = Math.PI / 4;
+    controls.pitch = 0.62;
+    controls.radius = 34;
+    controls.target.set(0, 1.5, 0);
+    needsRender = true;
+    if (showToast) toast('Camera centered.');
+  }
+
   function onPointerDown(e) {
     const canvas = $('#builder-canvas');
+    canvas.focus();
+    e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
     canvas._drag = { x: e.clientX, y: e.clientY, yaw: controls.yaw, pitch: controls.pitch, moved: false };
   }
@@ -527,14 +557,17 @@
     const dx = e.clientX - canvas._drag.x;
     const dy = e.clientY - canvas._drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 4) canvas._drag.moved = true;
-    if (e.buttons === 1 && canvas._drag.moved) {
+    if (((e.buttons & 1) || (e.buttons & 2)) && canvas._drag.moved) {
       controls.yaw = canvas._drag.yaw - dx * 0.01;
       controls.pitch = clamp(canvas._drag.pitch - dy * 0.01, -1.15, 1.2);
       needsRender = true;
     }
   }
 
-  $('#builder-canvas')?.addEventListener?.('pointerup', onPointerUp);
+  function clearPointerDrag() {
+    const canvas = $('#builder-canvas');
+    if (canvas) canvas._drag = null;
+  }
 
   function onPointerUp(e) {
     const canvas = $('#builder-canvas');
@@ -553,8 +586,9 @@
       cycleStateAt(hit.cell);
       return;
     }
-    if ((state.tool === 'use' || (isRight && hit.cellKey)) && hit.cellKey) {
-      useCell(hit.cell);
+    if (state.tool === 'use' || isRight) {
+      if (hit.cellKey) useCell(hit.cell);
+      else toast('Click a placed block to use it.');
       return;
     }
     const erase = e.shiftKey || state.tool === 'erase';
@@ -564,7 +598,19 @@
 
   function updateCursor(e) {
     const hit = pick(e);
-    $('#cursor-label').textContent = hit ? `${hit.placeCell.x}, ${hit.placeCell.y}, ${hit.placeCell.z}` : 'Ready';
+    if (!hit) {
+      $('#cursor-label').textContent = 'Ready';
+      return;
+    }
+    const action = state.tool === 'erase'
+      ? 'Erase'
+      : state.tool === 'pick'
+        ? 'Pick'
+        : state.tool === 'use'
+          ? 'Use'
+          : 'Place';
+    const c = state.tool === 'use' && hit.cell ? hit.cell : hit.placeCell;
+    $('#cursor-label').textContent = `${action} ${c.x},${c.y},${c.z}`;
   }
 
   function pick(e) {
@@ -597,10 +643,11 @@
   }
 
   function placeBlockId(blockId, cell, normal, hitCell) {
-    if (!blockId) return;
+    if (!blockId) return rejectPlacement('Choose a block first. Press E to open the creative inventory.');
     const resolved = resolvePlacementBlock(blockId, normal);
     const entry = state.engine.blocks.get(resolved);
-    if (!entry || !inside(cell)) return;
+    if (!entry) return rejectPlacement('That block is not available in the loaded pack.');
+    if (!inside(cell)) return rejectPlacement('That spot is outside the build area.');
 
     // Slab merge: clicking on a same-material slab promotes it to double.
     if (entry.behavior?.slabMergeable && hitCell) {
@@ -609,7 +656,7 @@
         target.state = Object.assign({}, target.state, { type: 'double' });
         rebuildCellObject(cellKey(hitCell), target);
         afterWorldChange();
-        return;
+        return true;
       }
     }
 
@@ -632,42 +679,44 @@
         }
         rebuildCellObject(cellKey(hitCell), target);
         afterWorldChange();
-        return;
+        return true;
       }
     }
 
-    if (!canPlaceAt(entry, cell, normal)) return;
+    const blocker = placementBlocker(entry, cell, normal, hitCell);
+    if (blocker) return rejectPlacement(blocker);
     const placementState = placementStateFor(entry, cell, normal);
 
     // Door: place lower at cell, upper at cell+(0,1,0).
     if (entry.behavior?.doorTwoBlock) {
       const upperCell = addCell(cell, { x: 0, y: 1, z: 0 });
-      if (!inside(upperCell)) return;
-      if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(upperCell))) return;
+      if (!inside(upperCell)) return rejectPlacement('Doors need two blocks of vertical space.');
+      if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(upperCell))) return rejectPlacement('Doors need two empty blocks.');
       const lowerState = Object.assign({}, placementState, { half: 'lower' });
       const upperState = Object.assign({}, placementState, { half: 'upper' });
       setCell(cell, entry.id, lowerState, { quiet: true });
       setCell(upperCell, entry.id, upperState, { quiet: true });
       solveConnectionsNear(cell);
       afterWorldChange();
-      return;
+      return true;
     }
 
     // Bed: place foot at cell, head at cell+facing.
     if (entry.behavior?.bedTwoBlock) {
       const headDelta = facingDelta(placementState.facing || 'north');
       const headCell = addCell(cell, headDelta);
-      if (!inside(headCell)) return;
-      if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(headCell))) return;
+      if (!inside(headCell)) return rejectPlacement('Beds need two blocks of horizontal space.');
+      if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(headCell))) return rejectPlacement('Beds need two empty blocks.');
       setCell(cell, entry.id, Object.assign({}, placementState, { part: 'foot' }), { quiet: true });
       setCell(headCell, entry.id, Object.assign({}, placementState, { part: 'head' }), { quiet: true });
       afterWorldChange();
-      return;
+      return true;
     }
 
     setCell(cell, entry.id, placementState, { quiet: true });
     solveConnectionsNear(cell);
     afterWorldChange();
+    return true;
   }
 
   // Choose the right block id for the clicked face. Vanilla treats wall
@@ -705,19 +754,55 @@
     return blockId;
   }
 
-  function canPlaceAt(entry, cell, normal) {
-    if (world.cells.has(cellKey(cell))) return false;
+  function placementBlocker(entry, cell, normal, hitCell) {
+    if (world.cells.has(cellKey(cell))) return 'That space is already filled.';
     const b = entry.behavior || {};
     const sideClick = Math.abs(normal.x) + Math.abs(normal.z) > 0.5;
     const verticalClick = Math.abs(normal.y) > 0.5;
     const floorClick = normal.y > 0.5;
     const ceilingClick = normal.y < -0.5;
-    if ((b.wallTorch || b.wallSign || b.wallBanner || b.wallHead || b.ladder) && !sideClick) return false;
-    if (b.ceilingSign && !ceilingClick) return false;
-    if ((b.torch || (b.sign && !b.ceilingSign) || b.banner || b.head) && !floorClick) return false;
-    if (b.floorOnly && !floorClick) return false;
-    if (b.lanternHangable && !verticalClick) return false;
-    return true;
+    if ((b.wallTorch || b.wallSign || b.wallBanner || b.wallHead || b.ladder) && !sideClick) {
+      return `${entry.displayName} needs the side of a block.`;
+    }
+    if ((b.wallTorch || b.wallSign || b.wallBanner || b.wallHead || b.ladder) && !hasClickedSupport(hitCell, cell, normal)) {
+      return `${entry.displayName} needs a block to attach to.`;
+    }
+    if (b.ceilingSign && !ceilingClick) return `${entry.displayName} hangs from the underside of a block.`;
+    if (b.ceilingSign && !hasClickedSupport(hitCell, cell, normal)) return `${entry.displayName} needs a block above it.`;
+    if ((b.torch || (b.sign && !b.ceilingSign) || b.banner || b.head) && !floorClick) {
+      return `${entry.displayName} goes on a top surface.`;
+    }
+    if ((b.torch || (b.sign && !b.ceilingSign) || b.banner || b.head) && !hasFloorSupport(hitCell, cell)) {
+      return `${entry.displayName} needs a block or ground underneath.`;
+    }
+    if (b.floorOnly && !floorClick) return `${entry.displayName} goes on a top surface.`;
+    if (b.floorOnly && !hasFloorSupport(hitCell, cell)) return `${entry.displayName} needs support underneath.`;
+    if (b.lanternHangable && !verticalClick) return 'Lanterns attach above or below, not on the side.';
+    if (b.lanternHangable && !hasClickedSupport(hitCell, cell, normal) && !(floorClick && cell.y === 0)) {
+      return ceilingClick ? 'Hanging lanterns need a block above.' : 'Lanterns need a block or ground underneath.';
+    }
+    return null;
+  }
+
+  function canPlaceAt(entry, cell, normal, hitCell) {
+    return !placementBlocker(entry, cell, normal, hitCell);
+  }
+
+  function hasClickedSupport(hitCell, cell, normal) {
+    if (hitCell && world.cells.has(cellKey(hitCell))) return true;
+    const support = addCell(cell, { x: -normal.x, y: -normal.y, z: -normal.z });
+    return world.cells.has(cellKey(support));
+  }
+
+  function hasFloorSupport(hitCell, cell) {
+    if (hitCell && world.cells.has(cellKey(hitCell))) return true;
+    if (cell.y === 0) return true;
+    return world.cells.has(cellKey(addCell(cell, { x: 0, y: -1, z: 0 })));
+  }
+
+  function rejectPlacement(message) {
+    toast(message);
+    return false;
   }
 
   // Test hook for the Playwright harness; harmless in production.
@@ -827,9 +912,15 @@
   function useCell(cell) {
     const key = cellKey(cell);
     const record = world.cells.get(key);
-    if (!record) return;
+    if (!record) {
+      toast('Nothing here to use.');
+      return;
+    }
     const entry = state.engine.blocks.get(record.id);
-    if (!entry?.stateSchema) return;
+    if (!entry?.stateSchema) {
+      toast('This block has no simple planner action yet.');
+      return;
+    }
 
     const schema = entry.stateSchema;
     const nextState = Object.assign({}, record.state);
@@ -869,7 +960,10 @@
       changedKey = 'eye';
     }
 
-    if (!changedKey) return;
+    if (!changedKey) {
+      toast('This block has no simple planner action yet.');
+      return;
+    }
     record.state = nextState;
     rebuildCellObject(key, record);
     const linked = linkedCell(record, cell, entry);
@@ -896,6 +990,7 @@
     for (const cell of world.cells.values()) blockRoot.remove(cell.object);
     world.cells.clear();
     afterWorldChange();
+    toast('Build cleared.');
   }
 
   function solveConnectionsNear(cell) {

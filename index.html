@@ -59,11 +59,26 @@
           <span id="build-count">0 placed</span>
         </div>
         <div class="button-grid">
-          <button id="tool-place" class="btn small active">Place</button>
-          <button id="tool-use" class="btn small">Use</button>
-          <button id="tool-erase" class="btn small">Erase</button>
-          <button id="tool-pick" class="btn small">Pick</button>
-          <button id="clear-build" class="btn small danger">Clear</button>
+          <button id="tool-place" class="btn small active" title="Place tool (1)">Place</button>
+          <button id="tool-use" class="btn small" title="Use / toggle tool (2)">Use</button>
+          <button id="tool-erase" class="btn small" title="Erase tool (3)">Erase</button>
+          <button id="tool-pick" class="btn small" title="Pick block tool (4)">Pick</button>
+          <button id="clear-build" class="btn small danger" title="Clear the current build">Clear</button>
+        </div>
+      </section>
+
+      <section class="tool-section controls-card">
+        <div class="section-head">
+          <strong>Controls</strong>
+          <span>quick start</span>
+        </div>
+        <div class="control-list">
+          <span><kbd>E</kbd> Creative inventory</span>
+          <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> Tools</span>
+          <span><kbd>Drag</kbd> Rotate view</span>
+          <span><kbd>Wheel</kbd> Zoom</span>
+          <span><kbd>Right click</kbd> Use block</span>
+          <span><kbd>C</kbd> Center camera</span>
         </div>
       </section>
     </aside>
@@ -72,7 +87,7 @@
       <canvas id="builder-canvas" tabindex="0"></canvas>
       <div class="stage-hud">
         <span id="cursor-label">Ready</span>
-        <span>Left click place | Right click use | Shift erase | E inventory | F3 debug</span>
+        <span>Left click place | Right click use | Drag rotate | Wheel zoom | E inventory</span>
       </div>
     </section>
 
