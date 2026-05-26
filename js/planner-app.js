@@ -18,6 +18,7 @@
 
   let scene, camera, renderer, gridPlane, blockRoot, controls, raycaster, pointer;
   const textureCache = new Map();
+  const textureLoadPromises = new Map();
   const thumbnailCache = new Map();
   const thumbnailQueue = [];
   let thumbnailWorking = false;
@@ -301,9 +302,13 @@
     const object = objectFor(id, entry.defaultState || {});
     if (!object) return null;
     await waitForTextures(object);
+    forceTextureUpload(object);
     object.rotation.set(0, 0, 0);
     thumbScene.add(object);
     try {
+      // Render twice: first call uploads textures to the thumb-renderer's
+      // GL context, second snapshots the fully-textured frame.
+      thumbRenderer.render(thumbScene, thumbCamera);
       thumbRenderer.render(thumbScene, thumbCamera);
       return thumbRenderer.domElement.toDataURL('image/png');
     } finally {
@@ -312,22 +317,37 @@
     }
   }
 
-  function waitForTextures(root) {
-    const images = new Set();
+  function forceTextureUpload(root) {
     root.traverse(child => {
       const mats = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
       for (const mat of mats) {
-        const img = mat.map?.image;
-        if (img && !(img.complete && img.naturalWidth > 0)) images.add(img);
+        if (mat.map) {
+          mat.map.needsUpdate = true;
+          if (thumbRenderer && typeof thumbRenderer.initTexture === 'function') {
+            try { thumbRenderer.initTexture(mat.map); } catch (e) { /* ignore */ }
+          }
+        }
       }
     });
-    if (!images.size) return Promise.resolve();
-    return Promise.all(Array.from(images).map(img => new Promise(resolve => {
-      const done = () => resolve();
-      img.addEventListener('load', done, { once: true });
-      img.addEventListener('error', done, { once: true });
-      setTimeout(done, 750);
-    })));
+  }
+
+  function waitForTextures(root) {
+    const promises = [];
+    root.traverse(child => {
+      const mats = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      for (const mat of mats) {
+        const url = mat.userData?.textureUrl;
+        if (!url) continue;
+        const pending = textureLoadPromises.get(url);
+        if (pending) {
+          promises.push(Promise.race([
+            pending,
+            new Promise(r => setTimeout(r, 1500)),
+          ]));
+        }
+      }
+    });
+    return Promise.all(promises);
   }
 
   function disposeObject(root) {
@@ -550,6 +570,19 @@
     solveConnectionsNear(cell);
     afterWorldChange();
   }
+
+  // Test-only hook for the Playwright harness; harmless in production.
+  window.__plannerTest = {
+    placeBlock(cell, id, normal) {
+      const entry = state.engine.blocks.get(id);
+      if (!entry || !inside(cell)) return;
+      const n = normal ? new THREE.Vector3(normal.x || 0, normal.y || 1, normal.z || 0) : new THREE.Vector3(0, 1, 0);
+      const placementState = placementStateFor(entry, cell, n);
+      setCell(cell, id, placementState, { quiet: true });
+      solveConnectionsNear(cell);
+      afterWorldChange();
+    },
+  };
 
   function setCell(cell, id, blockState, opts = {}) {
     const key = cellKey(cell);
@@ -788,12 +821,18 @@
 
   function materialFor(url) {
     if (textureCache.has(url)) return textureCache.get(url);
-    const texture = new THREE.TextureLoader().load(url, () => { needsRender = true; });
+    let resolveLoad;
+    textureLoadPromises.set(url, new Promise(r => { resolveLoad = r; }));
+    const texture = new THREE.TextureLoader().load(url, () => {
+      needsRender = true;
+      resolveLoad();
+    }, undefined, () => resolveLoad());
     texture.flipY = false;
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
     texture.colorSpace = THREE.SRGBColorSpace;
     const material = new THREE.MeshLambertMaterial({ map: texture, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide });
+    material.userData.textureUrl = url;
     textureCache.set(url, material);
     return material;
   }

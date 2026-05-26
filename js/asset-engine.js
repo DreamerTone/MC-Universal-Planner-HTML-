@@ -310,6 +310,16 @@
     };
     Object.keys(blockstate?.variants || {}).forEach(harvestVariantKey);
     for (const part of blockstate?.multipart || []) harvestWhen(part.when);
+    // Multipart `when` clauses typically only mention the truthy side
+    // (`{ north: "true" }`), leaving the schema missing `false`. Pad it
+    // so debug dropdowns and inference don't have to special-case.
+    for (const [key, values] of Object.entries(schema)) {
+      const list = Array.from(values);
+      if (list.length === 1) {
+        if (list[0] === 'true') values.add('false');
+        else if (list[0] === 'false') values.add('true');
+      }
+    }
     return Object.fromEntries(Object.entries(schema).map(([key, values]) => [key, Array.from(values).sort()]));
   }
 

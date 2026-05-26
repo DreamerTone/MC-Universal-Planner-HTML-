@@ -206,12 +206,13 @@
     const blockEntry = engine.blocks.get(id);
     if (blockEntry) {
       const debug = engine.debugBlock(id, ui.state);
+      const rawParts = engine.partsForBlock(id, ui.state);
       $('#debug-parts').textContent = JSON.stringify(debug.parts, null, 2);
       $('#debug-blockstate').textContent = JSON.stringify(debug.blockstate, null, 2);
       const firstSource = debug.parts[0]?.source;
       const firstModel = firstSource ? engine.models.get(engine.modelKey(firstSource, blockEntry.ns)) : null;
       $('#debug-model').textContent = firstModel ? JSON.stringify(firstModel, null, 2) : '(no model resolved)';
-      renderTextureGrid(debug.parts, blockEntry.ns);
+      renderTextureGrid(rawParts, blockEntry.ns);
     } else {
       const item = engine.items.get(id);
       const itemModel = item && engine.resolveModel(`${item.ns}:item/${item.name}`, item.ns);
