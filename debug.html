@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MC Universal Planner — Model Debugger</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body.debug-page { overflow: hidden; }
+    .debug-shell {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 58px minmax(0, 1fr);
+    }
+    .debug-workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr) 420px;
+    }
+    .debug-list,
+    .debug-detail {
+      min-height: 0;
+      overflow: auto;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      padding: 12px;
+    }
+    .debug-detail {
+      border-right: 0;
+      border-left: 1px solid var(--line);
+    }
+    .debug-stage {
+      position: relative;
+      background: #151922;
+      min-width: 0;
+      min-height: 0;
+    }
+    #debug-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+    }
+    .debug-row {
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      background: transparent;
+    }
+    .debug-row:hover { background: var(--panel-2); }
+    .debug-row.active {
+      border-color: var(--accent);
+      background: rgba(110, 211, 183, 0.08);
+    }
+    .debug-row img {
+      width: 32px;
+      height: 32px;
+      image-rendering: pixelated;
+      object-fit: contain;
+    }
+    .debug-row strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .debug-row em {
+      display: block;
+      color: var(--muted);
+      font-style: normal;
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .debug-counters {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+    .debug-counters span {
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+    }
+    .debug-filters {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .debug-filters select {
+      height: 32px;
+      padding: 0 8px;
+      background: #11151d;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 6px;
+    }
+    .debug-state-row {
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+    .debug-state-row label { color: var(--muted); }
+    .debug-state-row select {
+      height: 28px;
+      background: #11151d;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 5px;
+      padding: 0 4px;
+    }
+    .debug-section {
+      margin-bottom: 12px;
+    }
+    .debug-section h3 {
+      margin: 0 0 6px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .textures-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 6px;
+    }
+    .textures-grid figure {
+      margin: 0;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      text-align: center;
+      background: #11151d;
+      font-size: 10px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+    .textures-grid img {
+      width: 48px;
+      height: 48px;
+      image-rendering: pixelated;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 4px;
+      background: #0a0d12;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 4px 10px;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .meta-grid strong { color: var(--muted); font-weight: 500; }
+    .meta-grid span { word-break: break-all; }
+  </style>
+</head>
+<body class="debug-page">
+
+<section class="debug-shell">
+  <header class="topbar">
+    <div class="brand">
+      <strong>MC Universal Planner — Model Debugger</strong>
+      <span id="debug-pack-label">Load a client jar to inspect every model</span>
+    </div>
+    <nav class="tabs">
+      <a class="tab" href="index.html">&larr; Back to planner</a>
+    </nav>
+    <button id="debug-load" class="btn primary">Load Pack</button>
+    <input id="debug-file" type="file" accept=".jar,.zip,application/java-archive,application/zip" hidden>
+  </header>
+
+  <main class="debug-workspace">
+    <aside class="debug-list">
+      <div class="debug-filters">
+        <input id="debug-search" type="search" placeholder="Search blocks &amp; items">
+        <select id="debug-kind">
+          <option value="all">All</option>
+          <option value="blocks">Blocks only</option>
+          <option value="items">Items only</option>
+          <option value="orphans">Items without a block</option>
+        </select>
+        <select id="debug-category">
+          <option value="all">Every category</option>
+        </select>
+        <select id="debug-namespace">
+          <option value="">Every namespace</option>
+        </select>
+      </div>
+      <div class="debug-counters" id="debug-counters">
+        <span>0 blocks</span>
+        <span>0 items</span>
+        <span>0 models</span>
+        <span>0 textures</span>
+      </div>
+      <div id="debug-rows"></div>
+    </aside>
+
+    <section class="debug-stage">
+      <canvas id="debug-canvas" tabindex="0"></canvas>
+      <div class="stage-hud">
+        <span id="debug-cursor">Pick an entry on the left.</span>
+        <span>Drag to rotate &middot; Wheel to zoom &middot; Shift+drag pans</span>
+      </div>
+    </section>
+
+    <aside class="debug-detail">
+      <div class="debug-section" id="debug-meta-section">
+        <h3>Meta</h3>
+        <div class="meta-grid" id="debug-meta"></div>
+      </div>
+
+      <div class="debug-section" id="debug-state-section">
+        <h3>State Schema</h3>
+        <div id="debug-state-controls"></div>
+      </div>
+
+      <div class="debug-section" id="debug-textures-section">
+        <h3>Resolved Textures</h3>
+        <div class="textures-grid" id="debug-textures"></div>
+      </div>
+
+      <div class="debug-section">
+        <h3>Selected Parts (Resolved)</h3>
+        <pre id="debug-parts" class="debug-pre tall">Nothing selected.</pre>
+      </div>
+
+      <div class="debug-section">
+        <h3>Raw Blockstate JSON</h3>
+        <pre id="debug-blockstate" class="debug-pre">Nothing selected.</pre>
+      </div>
+
+      <div class="debug-section">
+        <h3>Raw Model JSON (first part)</h3>
+        <pre id="debug-model" class="debug-pre">Nothing selected.</pre>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="js/jar-loader.js"></script>
+<script src="js/asset-engine.js"></script>
+<script src="js/debug-app.js"></script>
+
+</body>
+</html>

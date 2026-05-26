@@ -8,6 +8,7 @@
     tool: 'place',
     query: '',
     creativeOpen: false,
+    debugMode: localStorage.getItem('mcup.debug') === '1',
   };
 
   const world = {
@@ -17,6 +18,12 @@
 
   let scene, camera, renderer, gridPlane, blockRoot, controls, raycaster, pointer;
   const textureCache = new Map();
+  const thumbnailCache = new Map();
+  const thumbnailQueue = [];
+  let thumbnailWorking = false;
+  let thumbRenderer = null;
+  let thumbScene = null;
+  let thumbCamera = null;
   let needsRender = true;
 
   document.addEventListener('DOMContentLoaded', init);
@@ -87,7 +94,30 @@
         state.creativeOpen ? closeCreative() : openCreative();
       }
       if (e.key === 'Escape' && state.creativeOpen) closeCreative();
+      if (e.key === 'F3' && !isTyping()) {
+        e.preventDefault();
+        toggleDebugMode();
+      }
     });
+
+    applyDebugMode();
+  }
+
+  function toggleDebugMode() {
+    state.debugMode = !state.debugMode;
+    localStorage.setItem('mcup.debug', state.debugMode ? '1' : '0');
+    applyDebugMode();
+    toast(state.debugMode ? 'Debug mode on (F3 to hide)' : 'Debug mode off');
+  }
+
+  function applyDebugMode() {
+    const debugTab = document.querySelector('.tab[data-panel="debug"]');
+    if (debugTab) debugTab.style.display = state.debugMode ? '' : 'none';
+    const debugView = document.querySelector('.panel-view[data-panel-view="debug"]');
+    if (debugView && !state.debugMode && debugView.classList.contains('active')) {
+      setPanel('builder');
+    }
+    document.body.classList.toggle('debug-mode', state.debugMode);
   }
 
   async function loadPack(file) {
@@ -155,10 +185,20 @@
 
   function blockCard(entry) {
     const active = entry.id === state.selectedId ? 'active' : '';
-    const icon = entry.icon ? `<img src="${entry.icon}" alt="">` : '<span class="drop-icon"></span>';
+    const layer0 = state.engine.itemLayer0(entry.id);
+    const cached = thumbnailCache.get(entry.id);
+    let iconHtml;
+    if (layer0) {
+      iconHtml = `<img class="card-icon" src="${layer0}" alt="">`;
+    } else if (cached) {
+      iconHtml = `<img class="card-icon" src="${cached}" alt="">`;
+    } else {
+      const fallback = entry.icon ? ` style="background-image:url('${entry.icon}')"` : '';
+      iconHtml = `<span class="card-icon pending" data-thumb="${escapeHtml(entry.id)}"${fallback}></span>`;
+    }
     return `
       <button class="block-card ${active}" data-id="${escapeHtml(entry.id)}">
-        ${icon}
+        ${iconHtml}
         <span>
           <strong>${escapeHtml(entry.displayName)}</strong>
           <em>${escapeHtml(entry.id)}</em>
@@ -172,6 +212,132 @@
     for (const card of root.querySelectorAll('.block-card')) {
       card.addEventListener('click', () => selectBlock(card.dataset.id));
     }
+    queueVisibleThumbnails(root);
+  }
+
+  function queueVisibleThumbnails(root) {
+    const pending = root.querySelectorAll('.card-icon.pending[data-thumb]');
+    if (!pending.length) return;
+    if (!('IntersectionObserver' in window)) {
+      pending.forEach(el => requestThumbnail(el.dataset.thumb));
+      return;
+    }
+    const io = new IntersectionObserver((entries, observer) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const id = entry.target.dataset.thumb;
+          if (id) requestThumbnail(id);
+          observer.unobserve(entry.target);
+        }
+      }
+    }, { rootMargin: '120px' });
+    pending.forEach(el => io.observe(el));
+  }
+
+  function requestThumbnail(id) {
+    if (thumbnailCache.has(id)) {
+      paintThumbnail(id, thumbnailCache.get(id));
+      return;
+    }
+    if (thumbnailQueue.includes(id)) return;
+    thumbnailQueue.push(id);
+    pumpThumbnailQueue();
+  }
+
+  async function pumpThumbnailQueue() {
+    if (thumbnailWorking || !thumbnailQueue.length) return;
+    thumbnailWorking = true;
+    try {
+      while (thumbnailQueue.length) {
+        const id = thumbnailQueue.shift();
+        try {
+          const url = await renderThumbnail(id);
+          if (url) {
+            thumbnailCache.set(id, url);
+            paintThumbnail(id, url);
+          }
+        } catch (err) {
+          console.warn('[thumbnail]', id, err);
+        }
+        await new Promise(r => setTimeout(r, 0));
+      }
+    } finally {
+      thumbnailWorking = false;
+    }
+  }
+
+  function paintThumbnail(id, url) {
+    for (const el of document.querySelectorAll(`.card-icon.pending[data-thumb="${cssEscape(id)}"]`)) {
+      el.outerHTML = `<img class="card-icon" src="${url}" alt="">`;
+    }
+  }
+
+  function ensureThumbnailRenderer() {
+    if (thumbRenderer) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 96;
+    thumbRenderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, preserveDrawingBuffer: true });
+    thumbRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    thumbRenderer.setPixelRatio(1);
+    thumbRenderer.setClearColor(0x000000, 0);
+    thumbScene = new THREE.Scene();
+    thumbScene.add(new THREE.AmbientLight(0xffffff, 0.78));
+    const key = new THREE.DirectionalLight(0xffffff, 0.7);
+    key.position.set(2, 3, 2);
+    thumbScene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+    fill.position.set(-2, 1, -1);
+    thumbScene.add(fill);
+    thumbCamera = new THREE.OrthographicCamera(-0.85, 0.85, 0.85, -0.85, 0.1, 10);
+    thumbCamera.position.set(2, 2, 2);
+    thumbCamera.lookAt(0, 0, 0);
+  }
+
+  async function renderThumbnail(id) {
+    const entry = state.engine.blocks.get(id);
+    if (!entry) return null;
+    ensureThumbnailRenderer();
+    const object = objectFor(id, entry.defaultState || {});
+    if (!object) return null;
+    await waitForTextures(object);
+    object.rotation.set(0, 0, 0);
+    thumbScene.add(object);
+    try {
+      thumbRenderer.render(thumbScene, thumbCamera);
+      return thumbRenderer.domElement.toDataURL('image/png');
+    } finally {
+      thumbScene.remove(object);
+      disposeObject(object);
+    }
+  }
+
+  function waitForTextures(root) {
+    const images = new Set();
+    root.traverse(child => {
+      const mats = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      for (const mat of mats) {
+        const img = mat.map?.image;
+        if (img && !(img.complete && img.naturalWidth > 0)) images.add(img);
+      }
+    });
+    if (!images.size) return Promise.resolve();
+    return Promise.all(Array.from(images).map(img => new Promise(resolve => {
+      const done = () => resolve();
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+      setTimeout(done, 750);
+    })));
+  }
+
+  function disposeObject(root) {
+    root.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+    });
+  }
+
+  function cssEscape(value) {
+    return String(value).replace(/(["\\])/g, '\\$1');
   }
 
   function selectBlock(id) {
@@ -190,8 +356,17 @@
       return;
     }
     $('#selected-card').className = 'selected-card-box';
+    const layer0 = state.engine.itemLayer0(entry.id);
+    const thumb = thumbnailCache.get(entry.id);
+    let iconHtml;
+    if (layer0) iconHtml = `<img src="${layer0}" alt="">`;
+    else if (thumb) iconHtml = `<img src="${thumb}" alt="">`;
+    else {
+      iconHtml = `<span class="card-icon pending" data-thumb="${escapeHtml(entry.id)}"></span>`;
+      requestThumbnail(entry.id);
+    }
     $('#selected-card').innerHTML = `
-      ${entry.icon ? `<img src="${entry.icon}" alt="">` : '<span class="drop-icon"></span>'}
+      ${iconHtml}
       <span>
         <strong>${escapeHtml(entry.displayName)}</strong>
         <em>${escapeHtml(entry.id)}</em>
@@ -539,6 +714,12 @@
       if (element.rotation.axis === 'x') pivot.rotation.x = angle;
       else if (element.rotation.axis === 'y') pivot.rotation.y = angle;
       else if (element.rotation.axis === 'z') pivot.rotation.z = angle;
+      if (element.rotation.rescale && angle !== 0) {
+        const factor = 1 / Math.cos(Math.abs(angle));
+        if (element.rotation.axis === 'x') pivot.scale.set(1, factor, factor);
+        else if (element.rotation.axis === 'y') pivot.scale.set(factor, 1, factor);
+        else if (element.rotation.axis === 'z') pivot.scale.set(factor, factor, 1);
+      }
       pivot.add(mesh);
       return pivot;
     }

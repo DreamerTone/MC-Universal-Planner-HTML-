@@ -88,6 +88,15 @@ button {
   min-height: 34px;
 }
 
+a.tab,
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: inherit;
+}
+
 .tab {
   padding: 0 14px;
   color: var(--muted);
@@ -307,11 +316,24 @@ textarea:focus {
 }
 
 .selected-card-box img,
-.block-card img {
+.block-card img,
+.card-icon {
   width: 36px;
   height: 36px;
   image-rendering: pixelated;
   object-fit: contain;
+}
+
+.card-icon {
+  display: inline-block;
+  border-radius: 4px;
+  background: #11151d center/contain no-repeat;
+}
+
+.card-icon.pending {
+  background-color: rgba(141, 183, 255, 0.06);
+  border: 1px dashed rgba(141, 183, 255, 0.2);
+  box-sizing: border-box;
 }
 
 .selected-card-box strong,

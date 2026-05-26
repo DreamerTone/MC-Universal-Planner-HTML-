@@ -188,12 +188,21 @@
         || null;
     }
 
-    iconFor(id, parts = null) {
+    itemLayer0(id) {
       const entry = this.blocks.get(id) || this.items.get(id);
       if (!entry) return null;
       const itemModel = this.resolveModel(`${entry.ns}:item/${entry.name}`, entry.ns);
-      const itemLayer = itemModel && resolveTextureVariable('layer0', itemModel.textures);
-      if (itemLayer) return this.textureUrl(itemLayer, entry.ns);
+      if (!itemModel) return null;
+      const ref = resolveTextureVariable('layer0', itemModel.textures);
+      if (!ref) return null;
+      return this.textureUrl(ref, entry.ns);
+    }
+
+    iconFor(id, parts = null) {
+      const entry = this.blocks.get(id) || this.items.get(id);
+      if (!entry) return null;
+      const layer0 = this.itemLayer0(id);
+      if (layer0) return layer0;
 
       const modelParts = parts || this.partsForBlock(id, entry.defaultState || {});
       for (const part of modelParts) {

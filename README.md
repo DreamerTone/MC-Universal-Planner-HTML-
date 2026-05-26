@@ -55,9 +55,34 @@ Load a vanilla client jar from:
 - macOS: `~/Library/Application Support/minecraft/versions/<version>/<version>.jar`
 - Linux: `~/.minecraft/versions/<version>/<version>.jar`
 
-Press `E` to open the creative inventory. Use the Debug panel to inspect the
-resolved blockstate, model parts, texture keys, element bounds, face UVs, and
-shape classification for the selected block.
+Press `E` to open the creative inventory. Press `F3` to toggle debug mode,
+which reveals the Debug tab with the resolved blockstate, model parts,
+texture keys, element bounds, face UVs, and shape classification for the
+selected block.
+
+## Model Debugger
+
+Open `debug.html` (or click **Models** in the topbar) for a dedicated page
+that loads any jar and lets you scrub through every block and item:
+
+- Filter by namespace, category, blocks vs items.
+- 3D preview of any selected block, with state-schema dropdowns for every
+  blockstate property the jar declares.
+- Resolved-parts JSON (post variant / multipart resolution), raw
+  blockstate JSON, and raw model JSON side by side.
+- Texture grid that shows every `#var` reference resolved to a concrete
+  PNG, so you can spot missing or mis-keyed textures quickly.
+
+The debug page reuses `js/asset-engine.js` directly, so it always shows
+exactly what the planner sees.
+
+## Inventory Icons
+
+Inventory cards prefer the item-model `layer0` texture (matches Java's
+real inventory icon), and fall back to a small 3D thumbnail rendered
+from the block model at item-display angles. Thumbnails are queued
+through `requestIdleCallback` and only rendered for visible cards, so
+opening the creative menu on a large modpack does not stall.
 
 ## Behavior Research
 
