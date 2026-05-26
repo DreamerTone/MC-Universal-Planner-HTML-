@@ -85,7 +85,7 @@
     for (const tab of $$('.tab')) {
       tab.addEventListener('click', () => setPanel(tab.dataset.panel));
     }
-    for (const id of ['place', 'erase', 'pick']) {
+    for (const id of ['place', 'use', 'erase', 'pick']) {
       $(`#tool-${id}`).addEventListener('click', () => setTool(id));
     }
 
@@ -450,7 +450,7 @@
 
   function setTool(tool) {
     state.tool = tool;
-    for (const id of ['place', 'erase', 'pick']) $(`#tool-${id}`).classList.toggle('active', id === tool);
+    for (const id of ['place', 'use', 'erase', 'pick']) $(`#tool-${id}`).classList.toggle('active', id === tool);
   }
 
   function openCreative() {
@@ -552,7 +552,11 @@
       cycleStateAt(hit.cell);
       return;
     }
-    const erase = e.shiftKey || isRight || state.tool === 'erase';
+    if ((state.tool === 'use' || (isRight && hit.cellKey)) && hit.cellKey) {
+      useCell(hit.cell);
+      return;
+    }
+    const erase = e.shiftKey || state.tool === 'erase';
     if (erase) eraseCell(hit.cell);
     else placeAt(hit.placeCell, hit.normal, hit.cell);
   }
@@ -631,12 +635,14 @@
       }
     }
 
+    if (!canPlaceAt(entry, cell, normal)) return;
     const placementState = placementStateFor(entry, cell, normal);
 
     // Door: place lower at cell, upper at cell+(0,1,0).
     if (entry.behavior?.doorTwoBlock) {
       const upperCell = addCell(cell, { x: 0, y: 1, z: 0 });
       if (!inside(upperCell)) return;
+      if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(upperCell))) return;
       const lowerState = Object.assign({}, placementState, { half: 'lower' });
       const upperState = Object.assign({}, placementState, { half: 'upper' });
       setCell(cell, entry.id, lowerState, { quiet: true });
@@ -651,7 +657,7 @@
       const headDelta = facingDelta(placementState.facing || 'north');
       const headCell = addCell(cell, headDelta);
       if (!inside(headCell)) return;
-      if (world.cells.has(cellKey(headCell))) return;
+      if (world.cells.has(cellKey(cell)) || world.cells.has(cellKey(headCell))) return;
       setCell(cell, entry.id, Object.assign({}, placementState, { part: 'foot' }), { quiet: true });
       setCell(headCell, entry.id, Object.assign({}, placementState, { part: 'head' }), { quiet: true });
       afterWorldChange();
@@ -670,20 +676,47 @@
     const entry = state.engine.blocks.get(blockId);
     if (!entry || !normal) return blockId;
     const sideClick = Math.abs(normal.x) + Math.abs(normal.z) > 0.5;
-    if (!sideClick) return blockId;
     const tryNames = [];
-    if (entry.behavior?.torch && !entry.behavior?.wallTorch) {
-      tryNames.push(entry.name.replace(/torch$/, 'wall_torch'));
-    }
-    if (entry.behavior?.sign && !entry.behavior?.wallSign) {
-      tryNames.push(entry.name.replace(/hanging_sign$/, 'wall_hanging_sign'));
-      tryNames.push(entry.name.replace(/sign$/, 'wall_sign'));
+    if (sideClick) {
+      if (entry.behavior?.torch && !entry.behavior?.wallTorch) {
+        tryNames.push(entry.name.replace(/torch$/, 'wall_torch'));
+      }
+      if (entry.behavior?.sign && !entry.behavior?.wallSign) {
+        tryNames.push(entry.name.replace(/hanging_sign$/, 'wall_hanging_sign'));
+        tryNames.push(entry.name.replace(/sign$/, 'wall_sign'));
+      }
+      if (entry.behavior?.banner && !entry.behavior?.wallBanner) {
+        tryNames.push(entry.name.replace(/banner$/, 'wall_banner'));
+      }
+      if (entry.behavior?.head && !entry.behavior?.wallHead) {
+        tryNames.push(entry.name.replace(/(skull|head)$/, 'wall_$1'));
+      }
+    } else {
+      if (entry.behavior?.wallTorch) tryNames.push(entry.name.replace(/wall_torch$/, 'torch'));
+      if (entry.behavior?.wallSign) tryNames.push(entry.name.replace(/wall_hanging_sign$/, 'hanging_sign'), entry.name.replace(/wall_sign$/, 'sign'));
+      if (entry.behavior?.wallBanner) tryNames.push(entry.name.replace(/wall_banner$/, 'banner'));
+      if (entry.behavior?.wallHead) tryNames.push(entry.name.replace(/wall_(skull|head)$/, '$1'));
     }
     for (const name of tryNames) {
       const w = state.engine.blocks.get(`${entry.ns}:${name}`);
       if (w) return w.id;
     }
     return blockId;
+  }
+
+  function canPlaceAt(entry, cell, normal) {
+    if (world.cells.has(cellKey(cell))) return false;
+    const b = entry.behavior || {};
+    const sideClick = Math.abs(normal.x) + Math.abs(normal.z) > 0.5;
+    const verticalClick = Math.abs(normal.y) > 0.5;
+    const floorClick = normal.y > 0.5;
+    const ceilingClick = normal.y < -0.5;
+    if ((b.wallTorch || b.wallSign || b.wallBanner || b.wallHead || b.ladder) && !sideClick) return false;
+    if (b.ceilingSign && !ceilingClick) return false;
+    if ((b.torch || (b.sign && !b.ceilingSign) || b.banner || b.head) && !floorClick) return false;
+    if (b.floorOnly && !floorClick) return false;
+    if (b.lanternHangable && !verticalClick) return false;
+    return true;
   }
 
   // Test hook for the Playwright harness; harmless in production.
@@ -698,6 +731,9 @@
       record.state = Object.assign({}, record.state, partial);
       rebuildCellObject(cellKey(cell), record);
       afterWorldChange();
+    },
+    snapshot() {
+      return Array.from(world.cells.entries()).map(([key, record]) => ({ key, id: record.id, state: record.state }));
     },
     world,
   };
@@ -787,6 +823,74 @@
     afterWorldChange();
   }
 
+  function useCell(cell) {
+    const key = cellKey(cell);
+    const record = world.cells.get(key);
+    if (!record) return;
+    const entry = state.engine.blocks.get(record.id);
+    if (!entry?.stateSchema) return;
+
+    const schema = entry.stateSchema;
+    const nextState = Object.assign({}, record.state);
+    let changedKey = null;
+    if ('open' in schema) {
+      nextState.open = record.state?.open === 'true' ? 'false' : 'true';
+      changedKey = 'open';
+    } else if ('powered' in schema) {
+      nextState.powered = record.state?.powered === 'true' ? 'false' : 'true';
+      changedKey = 'powered';
+    } else if ('delay' in schema) {
+      nextState.delay = nextCycleValue(schema.delay, record.state?.delay || '1');
+      changedKey = 'delay';
+    } else if ('mode' in schema) {
+      nextState.mode = nextCycleValue(schema.mode, record.state?.mode || schema.mode[0]);
+      changedKey = 'mode';
+    } else if ('bites' in schema) {
+      nextState.bites = nextCycleValue(schema.bites, record.state?.bites || '0');
+      changedKey = 'bites';
+    } else if ('candles' in schema) {
+      nextState.candles = nextCycleValue(schema.candles, record.state?.candles || '1');
+      changedKey = 'candles';
+    } else if ('pickles' in schema) {
+      nextState.pickles = nextCycleValue(schema.pickles, record.state?.pickles || '1');
+      changedKey = 'pickles';
+    } else if ('charges' in schema) {
+      nextState.charges = nextCycleValue(schema.charges, record.state?.charges || '0');
+      changedKey = 'charges';
+    } else if ('level' in schema) {
+      nextState.level = nextCycleValue(schema.level, record.state?.level || '0');
+      changedKey = 'level';
+    } else if ('note' in schema) {
+      nextState.note = nextCycleValue(schema.note, record.state?.note || '0');
+      changedKey = 'note';
+    } else if ('eye' in schema) {
+      nextState.eye = record.state?.eye === 'true' ? 'false' : 'true';
+      changedKey = 'eye';
+    }
+
+    if (!changedKey) return;
+    record.state = nextState;
+    rebuildCellObject(key, record);
+    const linked = linkedCell(record, cell, entry);
+    if (linked) {
+      const other = world.cells.get(cellKey(linked));
+      if (other && other.id === record.id && changedKey in (state.engine.blocks.get(other.id)?.stateSchema || {})) {
+        other.state = Object.assign({}, other.state, { [changedKey]: nextState[changedKey] });
+        rebuildCellObject(cellKey(linked), other);
+      }
+    }
+    solveConnectionsNear(cell);
+    toast(`${entry.displayName} ${changedKey} = ${nextState[changedKey]}`);
+    afterWorldChange();
+  }
+
+  function nextCycleValue(values, current) {
+    const list = (values || []).slice().sort((a, b) => Number(a) - Number(b) || String(a).localeCompare(String(b)));
+    if (!list.length) return current;
+    const idx = list.indexOf(String(current));
+    return list[(idx + 1 + list.length) % list.length];
+  }
+
   function clearBuild() {
     for (const cell of world.cells.values()) blockRoot.remove(cell.object);
     world.cells.clear();
@@ -815,6 +919,18 @@
         }
         if (entry.behavior?.stairShape) {
           merged = Object.assign({}, merged, { shape: solveStairShape(record, next) });
+        }
+        if (entry.behavior?.fenceGateInWall) {
+          merged = Object.assign({}, merged, { in_wall: fenceGateInWallValue(merged, next) ? 'true' : 'false' });
+        }
+        if (entry.behavior?.railShape) {
+          merged = Object.assign({}, merged, { shape: solveRailShape(record, next) });
+        }
+        if (entry.behavior?.redstoneWire) {
+          merged = Object.assign({}, merged, redstoneWireState(record.id, next));
+        }
+        if (entry.behavior?.chestConnect) {
+          merged = Object.assign({}, merged, { type: solveChestType(record, next) });
         }
         if (sameState(merged, record.state)) continue;
         record.state = merged;
@@ -845,9 +961,15 @@
 
     if (b.axisOnPlace) out.axis = Math.abs(normal.x) ? 'x' : (Math.abs(normal.z) ? 'z' : 'y');
 
-    if (b.horizontalFacingOnPlace || b.shape === 'stairs' || b.shape === 'door' || b.shape === 'bed' || b.shape === 'fence gate' || b.shape === 'trapdoor') {
+    if (b.sixWayFacing) {
+      out.facing = normalToFacing(normal);
+    } else if (b.horizontalFacingOnPlace || b.shape === 'stairs' || b.shape === 'door' || b.shape === 'bed' || b.shape === 'fence gate' || b.shape === 'trapdoor') {
       // Player-relative blocks: face the player (opposite of camera yaw).
       out.facing = facingFromCamera();
+    }
+
+    if (b.rotationOnPlace && 'rotation' in out) {
+      out.rotation = String(rotationFromCamera());
     }
 
     if (b.shape === 'stairs') {
@@ -875,6 +997,22 @@
       out.hanging = ceilingClick ? 'true' : 'false';
     }
 
+    if (b.doorTwoBlock) {
+      out.hinge = preferredDoorHinge(entry, cell, out.facing || 'north');
+    }
+
+    if (b.fenceGateInWall) {
+      out.in_wall = fenceGateInWallValue(out, cell) ? 'true' : 'false';
+    }
+
+    if (b.railShape) {
+      out.shape = defaultRailShape(entry, out);
+    }
+
+    if (b.redstoneWire) {
+      out.power = out.power || '0';
+    }
+
     if (b.faceAttachment) {
       // Buttons/levers: face=floor/wall/ceiling derived from clicked surface.
       if (floorClick) {
@@ -897,9 +1035,151 @@
       }
     }
 
+    if (b.wallBanner || b.wallHead) {
+      if (sideClick) out.facing = normalToFacing(normal);
+    }
+
     if (b.snowStackable && !out.layers) out.layers = '1';
 
     return out;
+  }
+
+  function normalToFacing(normal) {
+    if (normal.y > 0.5) return 'up';
+    if (normal.y < -0.5) return 'down';
+    if (normal.x > 0.5) return 'east';
+    if (normal.x < -0.5) return 'west';
+    if (normal.z > 0.5) return 'south';
+    if (normal.z < -0.5) return 'north';
+    return facingFromCamera();
+  }
+
+  function rotationFromCamera() {
+    // Standing signs/banners use Minecraft's 16-step horizontal rotation.
+    const angle = ((controls.yaw + Math.PI * 2) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    return Math.round((angle / (Math.PI * 2)) * 16) & 15;
+  }
+
+  function preferredDoorHinge(entry, cell, facing) {
+    const leftCell = addCell(cell, facingDelta(ccw(facing)));
+    const rightCell = addCell(cell, facingDelta(cw(facing)));
+    const left = world.cells.get(cellKey(leftCell));
+    const right = world.cells.get(cellKey(rightCell));
+    const sameDoor = (record) => record?.id === entry.id && (record.state?.facing || 'north') === facing;
+    if (sameDoor(left) && !sameDoor(right)) return 'right';
+    if (sameDoor(right) && !sameDoor(left)) return 'left';
+    const leftSolid = isSolidCell(leftCell);
+    const rightSolid = isSolidCell(rightCell);
+    if (leftSolid && !rightSolid) return 'right';
+    if (rightSolid && !leftSolid) return 'left';
+    return 'left';
+  }
+
+  function fenceGateInWallValue(stateLike, cell) {
+    const facing = stateLike.facing || 'north';
+    const checks = axisForSide(facing) === 'z'
+      ? [{ side: 'east', delta: { x: 1, y: 0, z: 0 } }, { side: 'west', delta: { x: -1, y: 0, z: 0 } }]
+      : [{ side: 'north', delta: { x: 0, y: 0, z: -1 } }, { side: 'south', delta: { x: 0, y: 0, z: 1 } }];
+    return checks.some(({ delta }) => {
+      const other = world.cells.get(cellKey(addCell(cell, delta)));
+      const otherEntry = other && state.engine.blocks.get(other.id);
+      return otherEntry?.behavior?.connector === 'wall';
+    });
+  }
+
+  function defaultRailShape(entry, stateLike = {}) {
+    const values = entry.stateSchema?.shape || [];
+    const preferred = axisForSide(stateLike.facing || facingFromCamera()) === 'x' ? 'east_west' : 'north_south';
+    if (values.includes(preferred)) return preferred;
+    if (values.includes('north_south')) return 'north_south';
+    if (values.includes('east_west')) return 'east_west';
+    return values[0] || 'north_south';
+  }
+
+  function solveRailShape(record, cell) {
+    const entry = state.engine.blocks.get(record.id);
+    const values = entry?.stateSchema?.shape || [];
+    if (!values.length) return record.state?.shape || 'north_south';
+    const allow = (shape) => values.includes(shape);
+    const railAt = (delta) => {
+      const other = world.cells.get(cellKey(addCell(cell, delta)));
+      const otherEntry = other && state.engine.blocks.get(other.id);
+      return !!otherEntry?.behavior?.railShape;
+    };
+
+    if (allow('ascending_east') && railAt({ x: 1, y: 1, z: 0 })) return 'ascending_east';
+    if (allow('ascending_west') && railAt({ x: -1, y: 1, z: 0 })) return 'ascending_west';
+    if (allow('ascending_south') && railAt({ x: 0, y: 1, z: 1 })) return 'ascending_south';
+    if (allow('ascending_north') && railAt({ x: 0, y: 1, z: -1 })) return 'ascending_north';
+
+    const n = railAt({ x: 0, y: 0, z: -1 });
+    const s = railAt({ x: 0, y: 0, z: 1 });
+    const e = railAt({ x: 1, y: 0, z: 0 });
+    const w = railAt({ x: -1, y: 0, z: 0 });
+
+    if (!n && !s && e && w && allow('east_west')) return 'east_west';
+    if (!e && !w && n && s && allow('north_south')) return 'north_south';
+    if (n && e && !s && !w && allow('north_east')) return 'north_east';
+    if (n && w && !s && !e && allow('north_west')) return 'north_west';
+    if (s && e && !n && !w && allow('south_east')) return 'south_east';
+    if (s && w && !n && !e && allow('south_west')) return 'south_west';
+    if ((e || w) && allow('east_west')) return 'east_west';
+    if ((n || s) && allow('north_south')) return 'north_south';
+    if (allow(record.state?.shape)) return record.state.shape;
+    return defaultRailShape(entry, record.state);
+  }
+
+  function redstoneWireState(id, cell) {
+    const entry = state.engine.blocks.get(id);
+    const sides = {
+      north: { x: 0, y: 0, z: -1 },
+      east: { x: 1, y: 0, z: 0 },
+      south: { x: 0, y: 0, z: 1 },
+      west: { x: -1, y: 0, z: 0 },
+    };
+    const out = {};
+    for (const [side, delta] of Object.entries(sides)) {
+      const other = world.cells.get(cellKey(addCell(cell, delta)));
+      out[side] = redstoneWireValue(entry, !!other && canRedstoneConnect(other, side));
+    }
+    return out;
+  }
+
+  function redstoneWireValue(entry, connected) {
+    const values = entry?.stateSchema?.north || [];
+    if (values.includes('side') || values.includes('up') || values.includes('none')) {
+      return connected ? 'side' : 'none';
+    }
+    return connected ? 'true' : 'false';
+  }
+
+  function canRedstoneConnect(otherRecord) {
+    const other = state.engine.blocks.get(otherRecord.id);
+    if (!other) return false;
+    return !!(other.behavior?.redstoneWire || other.behavior?.redstoneTarget || other.id.endsWith(':redstone_block'));
+  }
+
+  function solveChestType(record, cell) {
+    const entry = state.engine.blocks.get(record.id);
+    const values = entry?.stateSchema?.type || [];
+    if (!values.includes('left') || !values.includes('right')) return record.state?.type || 'single';
+    const facing = record.state?.facing || 'north';
+    const same = (delta) => {
+      const other = world.cells.get(cellKey(addCell(cell, delta)));
+      if (!other || other.id !== record.id) return false;
+      if ((other.state?.facing || 'north') !== facing) return false;
+      return (other.state?.type || 'single') !== 'single' || true;
+    };
+    if (same(facingDelta(ccw(facing)))) return 'right';
+    if (same(facingDelta(cw(facing)))) return 'left';
+    return values.includes('single') ? 'single' : (record.state?.type || values[0]);
+  }
+
+  function isSolidCell(cell) {
+    const record = world.cells.get(cellKey(cell));
+    if (!record) return false;
+    const entry = state.engine.blocks.get(record.id);
+    return !!(entry?.behavior?.solidConnectorTarget || entry?.fullCube);
   }
 
   function facingDelta(facing) {
@@ -922,7 +1202,8 @@
     };
     for (const [side, delta] of Object.entries(sides)) {
       const other = world.cells.get(cellKey(addCell(cell, delta)));
-      out[side] = connectorValue(entry, !!other && canConnect(entry, other, side));
+      const connected = !!other && canConnect(entry, other, side);
+      out[side] = connectorValue(entry, connected, cell, delta);
     }
     if (entry?.behavior?.connector === 'wall' && 'up' in (entry.stateSchema || {})) {
       out.up = wallUpValue(out) ? 'true' : 'false';
@@ -934,12 +1215,19 @@
     return !!entry?.behavior?.connector;
   }
 
-  function connectorValue(entry, connected) {
+  function connectorValue(entry, connected, cell, delta) {
     const values = entry?.stateSchema?.north || [];
     if (values.includes('low') || values.includes('tall') || values.includes('none')) {
+      if (connected && values.includes('tall') && wallSideShouldBeTall(cell, delta)) return 'tall';
       return connected ? 'low' : 'none';
     }
     return connected ? 'true' : 'false';
+  }
+
+  function wallSideShouldBeTall(cell, delta) {
+    if (!cell || !delta) return false;
+    return isSolidCell(addCell(cell, { x: delta.x, y: 1, z: delta.z }))
+      || isSolidCell(addCell(cell, { x: 0, y: 1, z: 0 }));
   }
 
   function wallUpValue(sides) {

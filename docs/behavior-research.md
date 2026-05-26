@@ -91,6 +91,18 @@ model support and common placement behavior are still realistic.
 - **Signs/hanging signs**: floor/wall variants, `rotation` or `facing`, and a
   simple block-entity text placeholder.
 - **Beds**: two-block placement with `part=head/foot`, `facing`, and `occupied`.
+- **Fence gates in walls**: set `in_wall=true` when adjacent wall connectors
+  lower the gate model, while still allowing fences and walls to connect to the
+  gate.
+- **Rails**: infer flat line and curve `shape` values from neighboring rails;
+  preserve ascending variants when an uphill neighbor is present.
+- **Redstone wire**: infer `none` / `side` cardinal connections to adjacent
+  dust and redstone components for visual planning.
+- **Double chests**: infer `type=left/right/single` from neighboring chests
+  facing the same direction.
+- **Use interaction**: toggle common stateful blocks (`open`, `powered`,
+  repeater `delay`, comparator `mode`, candle/pickle count, cake bites, charge
+  level, notes, and eyes) without simulating full gameplay.
 
 ### Medium Priority Visual/Planner Blocks
 

@@ -350,12 +350,38 @@
     if (keys.has('hinge')) out.hinge = 'left';
     if (keys.has('open')) out.open = 'false';
     if (keys.has('powered')) out.powered = 'false';
+    if (keys.has('power')) out.power = '0';
+    if (keys.has('delay')) out.delay = '1';
+    if (keys.has('mode')) out.mode = schema.mode?.includes('compare') ? 'compare' : (schema.mode?.[0] || 'compare');
+    if (keys.has('locked')) out.locked = 'false';
+    if (keys.has('enabled')) out.enabled = 'true';
     if (keys.has('layers')) out.layers = '1';
+    if (keys.has('level')) out.level = schema.level?.includes('0') ? '0' : (schema.level?.[0] || '0');
+    if (keys.has('age')) out.age = '0';
+    if (keys.has('stage')) out.stage = '0';
+    if (keys.has('moisture')) out.moisture = '0';
+    if (keys.has('bites')) out.bites = '0';
+    if (keys.has('candles')) out.candles = '1';
+    if (keys.has('pickles')) out.pickles = '1';
+    if (keys.has('charges')) out.charges = '0';
+    if (keys.has('eggs')) out.eggs = '1';
+    if (keys.has('hatch')) out.hatch = '0';
+    if (keys.has('distance')) out.distance = schema.distance?.includes('7') ? '7' : (schema.distance?.[0] || '1');
+    if (keys.has('persistent')) out.persistent = 'false';
     if (keys.has('face')) out.face = 'wall';
     if (keys.has('waterlogged')) out.waterlogged = 'false';
     if (keys.has('lit')) out.lit = 'true';
     if (keys.has('occupied')) out.occupied = 'false';
     if (keys.has('in_wall')) out.in_wall = 'false';
+    if (keys.has('short')) out.short = 'false';
+    if (keys.has('eye')) out.eye = 'false';
+    if (keys.has('disarmed')) out.disarmed = 'false';
+    if (keys.has('unstable')) out.unstable = 'false';
+    if (keys.has('vertical_direction')) out.vertical_direction = schema.vertical_direction?.includes('up') ? 'up' : (schema.vertical_direction?.[0] || 'up');
+    if (keys.has('attach')) out.attach = 'false';
+    if (keys.has('attached')) out.attached = 'false';
+    if (keys.has('tilt')) out.tilt = schema.tilt?.includes('none') ? 'none' : (schema.tilt?.[0] || 'none');
+    if (keys.has('sculk_sensor_phase')) out.sculk_sensor_phase = schema.sculk_sensor_phase?.includes('inactive') ? 'inactive' : (schema.sculk_sensor_phase?.[0] || 'inactive');
     for (const side of ['north', 'east', 'south', 'west', 'up', 'down']) {
       if (keys.has(side)) {
         const values = schema[side] || [];
@@ -385,6 +411,9 @@
     if (/pane|bars/.test(name)) return 'pane';
     if (/_door$/.test(name)) return 'door';
     if (/_bed$|^bed$/.test(name)) return 'bed';
+    if (/rail/.test(name)) return 'rail';
+    if (/redstone_wire/.test(name)) return 'redstone_wire';
+    if (/_chest$|^chest$|trapped_chest/.test(name)) return 'chest';
     if (/^carpet$|_carpet$|moss_carpet/.test(name)) return 'carpet';
     if (/_button$/.test(name)) return 'button';
     if (/lever/.test(name)) return 'lever';
@@ -393,7 +422,14 @@
     if (/torch/.test(name)) return 'torch';
     if (/wall_sign|wall_hanging_sign/.test(name)) return 'wall_sign';
     if (/sign/.test(name)) return 'sign';
+    if (/wall_banner/.test(name)) return 'wall_banner';
+    if (/banner/.test(name)) return 'banner';
+    if (/wall_(skull|head)/.test(name)) return 'wall_head';
+    if (/(skull|head)$/.test(name)) return 'head';
     if (/lantern/.test(name)) return 'lantern';
+    if (/end_rod|lightning_rod/.test(name)) return 'rod';
+    if (/repeater|comparator/.test(name)) return 'redstone_component';
+    if (/observer|dispenser|dropper|piston|furnace|smoker|blast_furnace|barrel|hopper|loom|lectern|stonecutter|crafter/.test(name)) return 'machine';
     if (/^snow$|snow_layer/.test(name)) return 'snow_layer';
     if (/ladder/.test(name)) return 'ladder';
     if (/sapling|flower|mushroom|roots|grass|fern|crop/.test(name)) return 'plant';
@@ -423,13 +459,34 @@
       trapdoorPlacement: shape === 'trapdoor' && has('half') && has('facing'),
       doorTwoBlock: shape === 'door' && has('half') && has('hinge'),
       bedTwoBlock: shape === 'bed' && has('part'),
+      fenceGateInWall: shape === 'fence gate' && has('in_wall'),
+      railShape: shape === 'rail' && has('shape'),
+      redstoneWire: shape === 'redstone_wire' && hasCardinals,
+      redstoneTarget: shape === 'redstone_component'
+        || /redstone|target|tripwire|daylight_detector|note_block/.test(name)
+        || shape === 'button'
+        || shape === 'lever'
+        || shape === 'pressure_plate'
+        || has('powered'),
+      chestConnect: shape === 'chest' && has('type') && has('facing'),
+      openable: has('open'),
+      poweredState: has('powered'),
+      sixWayFacing: has('facing') && (schema.facing || []).includes('up') && (schema.facing || []).includes('down'),
+      rotationOnPlace: has('rotation'),
+      floorOnly: ['rail', 'redstone_wire', 'pressure_plate', 'carpet', 'snow_layer', 'plant', 'redstone_component'].includes(shape)
+        || /candle|cake|composter|daylight_detector|tripwire|repeater|comparator/.test(name),
       snowStackable: shape === 'snow_layer' && has('layers'),
       faceAttachment: has('face'),
       ladder: shape === 'ladder',
       wallTorch: shape === 'wall_torch',
       wallSign: shape === 'wall_sign',
+      wallBanner: shape === 'wall_banner',
+      wallHead: shape === 'wall_head',
       torch: shape === 'torch',
       sign: shape === 'sign',
+      ceilingSign: shape === 'sign' && /hanging_sign/.test(name),
+      banner: shape === 'banner',
+      head: shape === 'head',
       shape,
     };
   }

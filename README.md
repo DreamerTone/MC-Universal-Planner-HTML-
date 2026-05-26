@@ -63,10 +63,12 @@ Load a vanilla client jar from:
 - macOS: `~/Library/Application Support/minecraft/versions/<version>/<version>.jar`
 - Linux: `~/.minecraft/versions/<version>/<version>.jar`
 
-Press `E` to open the creative inventory. Press `F3` to toggle debug mode,
-which reveals the Debug tab with the resolved blockstate, model parts,
-texture keys, element bounds, face UVs, and shape classification for the
-selected block.
+Press `E` to open the creative inventory. Right-click a placed block, or choose
+the **Use** tool, to toggle vanilla-style states such as doors, fence gates,
+trapdoors, buttons, levers, repeater delay, comparator mode, candle count, cake
+bites, and similar stateful planner blocks. Press `F3` to toggle debug mode,
+which reveals the Debug tab with the resolved blockstate, model parts, texture
+keys, element bounds, face UVs, and shape classification for the selected block.
 
 ## Model Debugger
 
@@ -97,6 +99,7 @@ opening the creative menu on a large modpack does not stall.
 The block behavior plan is tracked in `docs/behavior-research.md`. The short
 version: render from jar assets, infer common behavior from blockstate schemas
 and tags, and implement vanilla behavior families instead of hardcoding every
-block id one by one. Connector blocks are solved after placement from the final
-neighbor graph, then rebuilt with the state values their blockstate schema
+block id one by one. Connector blocks, rails, redstone wire, double chests, wall
+gates, stairs, doors, beds, and attachable blocks are solved from placement and
+nearby world state, then rebuilt with the state values their blockstate schema
 expects.
