@@ -21,6 +21,9 @@ This version starts with a small asset engine:
   rotations instead of hand-built block guesses.
 - Classify a true full cube only when the resolved geometry is exactly one
   unrotated 0-16 element with all six faces.
+- Infer behavior descriptors from blockstate properties, so connection and
+  placement rules are driven by states such as `north`, `east`, `facing`,
+  `axis`, `half`, and wall-specific `low` / `none` connectors.
 
 ## Sources I Used
 

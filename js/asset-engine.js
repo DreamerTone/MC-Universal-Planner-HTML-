@@ -64,6 +64,7 @@
         kind,
         displayName,
         blockstate,
+        stateSchema: stateSchemaFromBlockstate(blockstate),
         category: classifyCategory(name),
         defaultState: defaultStateFromBlockstate(blockstate, name),
       };
@@ -74,6 +75,7 @@
       const shape = classifyShape(entry.name, parts);
       return Object.assign({}, entry, {
         shape,
+        behavior: inferBehavior(entry.name, entry.stateSchema, shape),
         icon: this.iconFor(entry.id, parts),
         fullCube: shape === 'full cube',
       });
@@ -275,22 +277,36 @@
     });
   }
 
-  function defaultStateFromBlockstate(blockstate, name) {
-    const keys = new Set();
-    const harvest = (source) => {
-      if (!source) return;
-      for (const key of Object.keys(source)) {
-        for (const piece of key.split(',')) {
-          const [k] = piece.split('=');
-          if (k) keys.add(k);
-        }
+  function stateSchemaFromBlockstate(blockstate) {
+    const schema = {};
+    const add = (key, value) => {
+      if (!key || key === 'OR' || key === 'AND') return;
+      if (!schema[key]) schema[key] = new Set();
+      String(value).split('|').forEach(v => schema[key].add(v));
+    };
+    const harvestVariantKey = (key) => {
+      if (!key || key === 'normal') return;
+      for (const piece of key.split(',')) {
+        const [k, v] = piece.split('=');
+        if (k && v !== undefined) add(k, v);
       }
     };
-    harvest(blockstate?.variants);
-    for (const part of blockstate?.multipart || []) {
-      for (const key of Object.keys(part.when || {})) if (key !== 'OR' && key !== 'AND') keys.add(key);
-    }
+    const harvestWhen = (when) => {
+      if (!when) return;
+      if (Array.isArray(when.OR)) when.OR.forEach(harvestWhen);
+      if (Array.isArray(when.AND)) when.AND.forEach(harvestWhen);
+      for (const [key, value] of Object.entries(when)) {
+        if (key !== 'OR' && key !== 'AND') add(key, value);
+      }
+    };
+    Object.keys(blockstate?.variants || {}).forEach(harvestVariantKey);
+    for (const part of blockstate?.multipart || []) harvestWhen(part.when);
+    return Object.fromEntries(Object.entries(schema).map(([key, values]) => [key, Array.from(values).sort()]));
+  }
 
+  function defaultStateFromBlockstate(blockstate, name) {
+    const schema = stateSchemaFromBlockstate(blockstate);
+    const keys = new Set(Object.keys(schema));
     const out = {};
     if (keys.has('axis')) out.axis = 'y';
     if (keys.has('facing')) out.facing = 'north';
@@ -311,6 +327,7 @@
     const elements = parts.flatMap(part => part.elements || []);
     if (isFullCube(elements)) return 'full cube';
     if (/stairs/.test(name)) return 'stairs';
+    if (/fence_gate/.test(name)) return 'fence gate';
     if (/fence/.test(name)) return 'fence';
     if (/wall/.test(name)) return 'wall';
     if (/pane|bars/.test(name)) return 'pane';
@@ -319,6 +336,25 @@
     if (/lantern/.test(name)) return 'lantern';
     if (/sapling|flower|mushroom|roots|grass|fern|crop/.test(name)) return 'plant';
     return elements.length ? 'custom' : 'unknown';
+  }
+
+  function inferBehavior(name, schema, shape) {
+    const hasCardinals = ['north', 'east', 'south', 'west'].every(key => key in schema);
+    const connector = (() => {
+      if (!hasCardinals) return null;
+      if (shape === 'wall') return 'wall';
+      if (shape === 'pane') return 'pane';
+      if (shape === 'fence') return 'fence';
+      return null;
+    })();
+    return {
+      axisOnPlace: 'axis' in schema,
+      horizontalFacingOnPlace: 'facing' in schema,
+      halfOnPlace: 'half' in schema,
+      connector,
+      fenceGate: shape === 'fence gate',
+      solidConnectorTarget: shape === 'full cube',
+    };
   }
 
   function isFullCube(elements) {

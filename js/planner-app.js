@@ -423,18 +423,19 @@
 
   function placementStateFor(entry, cell, normal) {
     const out = Object.assign({}, entry.defaultState || {});
-    if ('axis' in out) out.axis = Math.abs(normal.x) ? 'x' : (Math.abs(normal.z) ? 'z' : 'y');
-    if ('facing' in out) {
+    if (entry.behavior?.axisOnPlace) out.axis = Math.abs(normal.x) ? 'x' : (Math.abs(normal.z) ? 'z' : 'y');
+    if (entry.behavior?.horizontalFacingOnPlace) {
       if (Math.abs(normal.x)) out.facing = normal.x > 0 ? 'east' : 'west';
       else if (Math.abs(normal.z)) out.facing = normal.z > 0 ? 'south' : 'north';
       else out.facing = facingFromCamera();
     }
-    if ('half' in out) out.half = normal.y < 0 ? 'top' : 'bottom';
+    if (entry.behavior?.halfOnPlace) out.half = normal.y < 0 ? 'top' : 'bottom';
     if (hasConnectorState(entry)) Object.assign(out, connectorState(entry.id, cell));
     return out;
   }
 
   function connectorState(id, cell) {
+    const entry = state.engine.blocks.get(id);
     const checks = {
       north: { x: 0, y: 0, z: -1 },
       east: { x: 1, y: 0, z: 0 },
@@ -444,21 +445,34 @@
     const out = {};
     for (const [side, delta] of Object.entries(checks)) {
       const other = world.cells.get(cellKey(addCell(cell, delta)));
-      out[side] = other && canConnect(id, other.id) ? 'true' : 'false';
+      out[side] = connectorValue(entry, !!other && canConnect(entry, other, side));
     }
+    if (entry?.behavior?.connector === 'wall' && 'up' in (entry.stateSchema || {})) out.up = 'true';
     return out;
   }
 
   function hasConnectorState(entry) {
-    return entry && ['fence', 'wall', 'pane'].includes(entry.shape);
+    return !!entry?.behavior?.connector;
   }
 
-  function canConnect(id, otherId) {
-    const a = state.engine.blocks.get(id);
-    const b = state.engine.blocks.get(otherId);
-    if (!a || !b) return false;
-    if (b.fullCube) return true;
-    return a.shape === b.shape;
+  function connectorValue(entry, connected) {
+    if (entry?.behavior?.connector === 'wall') return connected ? 'low' : 'none';
+    return connected ? 'true' : 'false';
+  }
+
+  function canConnect(entry, otherRecord, side) {
+    const other = state.engine.blocks.get(otherRecord.id);
+    if (!entry || !other) return false;
+    if (other.behavior?.solidConnectorTarget || other.fullCube) return true;
+    if (entry.behavior?.connector === 'fence' && other.behavior?.fenceGate) {
+      const facing = otherRecord.state?.facing || other.defaultState?.facing || 'north';
+      return axisForSide(side) !== axisForSide(facing);
+    }
+    return entry.behavior?.connector && entry.behavior.connector === other.behavior?.connector;
+  }
+
+  function axisForSide(side) {
+    return side === 'east' || side === 'west' ? 'x' : 'z';
   }
 
   function objectFor(id, blockState) {
